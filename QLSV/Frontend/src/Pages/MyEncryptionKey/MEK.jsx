@@ -1,0 +1,258 @@
+import React, { useEffect, useState } from "react";
+import "./MEK.css";
+
+function EncryptionKey() {
+  const keyInfo = {
+    status: "Active",
+    keyId: "EK-2024-001-A",
+    generatedAt: "2024-01-15",
+    expiryAt: "2025-01-15",
+  };
+
+  const [logs, setLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(true);
+  const [logsError, setLogsError] = useState("");
+
+  const [form, setForm] = useState({
+    current: "",
+    next: "",
+    confirm: ""
+  });
+
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const onChange = (e) => {
+    setForm({
+      ...form,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return "N/A";
+    return new Date(value).toLocaleString("vi-VN");
+  };
+
+  useEffect(() => {
+    const fetchLoginHistory = async () => {
+      try {
+        setLogsLoading(true);
+        setLogsError("");
+
+        const res = await fetch("http://localhost:3000/api/login-history", {
+          method: "GET",
+          credentials: "include"
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.message || "Failed to load login history");
+        }
+
+        const history = Array.isArray(data) ? data : (data.history || []);
+        setLogs(history.slice(0, 5));
+      } catch (error) {
+        console.error("Lỗi lấy lịch sử đăng nhập:", error);
+        setLogsError(error.message || "Failed to load login history");
+      } finally {
+        setLogsLoading(false);
+      }
+    };
+
+    fetchLoginHistory();
+  }, []);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setMsg("");
+
+    if (!form.current || !form.next || !form.confirm) {
+      return setMsg("Please fill out all fields.");
+    }
+
+    if (form.next.length < 4) {
+      return setMsg("New PIN must be at least 4 digits.");
+    }
+
+    if (form.next !== form.confirm) {
+      return setMsg("New PIN and Confirm do not match.");
+    }
+
+    try {
+      setLoading(true);
+
+      const res = await fetch(
+        "http://localhost:3000/api/set-pin",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            currentPin: form.current,
+            newPin: form.next
+          })
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMsg(data.message || "Update failed");
+        setLoading(false);
+        return;
+      }
+
+      setMsg("PIN updated successfully!");
+
+      setForm({
+        current: "",
+        next: "",
+        confirm: ""
+      });
+
+      setLoading(false);
+    } catch (error) {
+      console.error(error);
+      setMsg("Server error");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="ek">
+      <div className="ek__grid">
+        {/* Key status */}
+        <section className="card ek__status">
+          <div className="ek__statusHeader">
+            <div className="ek__title one">
+              Encryption Key Status
+            </div>
+            <span className="badge badge--ok">
+              {keyInfo.status}
+            </span>
+          </div>
+
+          <ul className="ek__kv">
+            <li>
+              <span>Key ID:</span>
+              <strong className="mono">
+                {keyInfo.keyId}
+              </strong>
+            </li>
+
+            <li>
+              <span>Generated Date:</span>
+              <strong>{keyInfo.generatedAt}</strong>
+            </li>
+
+            <li>
+              <span>Expiry Date:</span>
+              <strong>{keyInfo.expiryAt}</strong>
+            </li>
+          </ul>
+        </section>
+
+        {/* Logs */}
+        <section className="card ek__logs">
+          <div className="ek__title two">
+            Recent Update Logs
+          </div>
+
+          <div className="ek__logsTable">
+            <div className="ek__logsHead">
+              <div>Date</div>
+              <div>Action</div>
+            </div>
+
+            <div className="ek__logsBody">
+              {logsLoading ? (
+                <div className="ek__logsRow">
+                  <div>Loading...</div>
+                  <div></div>
+                </div>
+              ) : logsError ? (
+                <div className="ek__logsRow">
+                  <div>{logsError}</div>
+                  <div></div>
+                </div>
+              ) : logs.length === 0 ? (
+                <div className="ek__logsRow">
+                  <div>No login history</div>
+                  <div></div>
+                </div>
+              ) : (
+                logs.map((log, i) => (
+                  <div className="ek__logsRow" key={i}>
+                    <div className="mono">
+                      {formatDateTime(log.THOI_GIAN)}
+                    </div>
+                    <div>Student Login</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Change PIN */}
+        <section className="card ek__change">
+          <div className="ek__title">
+            Change Your PIN
+          </div>
+
+          <form className="ek__form" onSubmit={submit}>
+            <label className="ek__field">
+              <input
+                type="password"
+                name="current"
+                value={form.current}
+                onChange={onChange}
+                placeholder="Current PIN"
+              />
+            </label>
+
+            <label className="ek__field">
+              <input
+                type="password"
+                name="next"
+                value={form.next}
+                onChange={onChange}
+                placeholder="New PIN"
+              />
+            </label>
+
+            <label className="ek__field">
+              <input
+                type="password"
+                name="confirm"
+                value={form.confirm}
+                onChange={onChange}
+                placeholder="Confirm New PIN"
+              />
+            </label>
+
+            {msg && (
+              <div className="ek__msg">
+                {msg}
+              </div>
+            )}
+
+            <button
+              className="btn btn--primary"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? "Updating..." : "Change PIN"}
+            </button>
+          </form>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+export default EncryptionKey;
