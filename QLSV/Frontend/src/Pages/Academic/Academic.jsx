@@ -184,13 +184,22 @@ function Academic() {
     });
   }, [courses, q]);
 
-  const gpa = useMemo(() => {
-    if (!decrypted) return null;
+  const semesterSummary = useMemo(() => {
+    if (!decrypted) {
+      return {
+        gpa: null,
+        totalCredits: 0,
+        countedCourses: 0,
+      };
+    }
 
     let totalGpaPoints = 0;
     let totalCredits = 0;
+    let countedCourses = 0;
 
-    filtered.forEach((c) => {
+    // Tính GPA theo toàn bộ học phần của năm học + học kỳ đang chọn.
+    // Không dùng filtered, vì filtered chỉ là danh sách đang tìm kiếm trên giao diện.
+    courses.forEach((c) => {
       if (c.error) return;
 
       const finalGrade =
@@ -204,19 +213,28 @@ function Academic() {
       const credits = Number(c.SoTinChi || 0);
 
       if (Number.isFinite(score10) && credits > 0) {
-        // Quy đổi tuyến tính từ thang 10 sang thang GPA 4.0.
-        // Không làm tròn điểm từng môn; chỉ làm tròn kết quả GPA cuối cùng 2 chữ số thập phân.
         const score4 = (score10 / 10) * 4;
 
         totalGpaPoints += score4 * credits;
         totalCredits += credits;
+        countedCourses += 1;
       }
     });
 
-    if (!totalCredits) return null;
+    if (!totalCredits) {
+      return {
+        gpa: null,
+        totalCredits: 0,
+        countedCourses: 0,
+      };
+    }
 
-    return (totalGpaPoints / totalCredits).toFixed(2);
-  }, [filtered, decrypted]);
+    return {
+      gpa: (totalGpaPoints / totalCredits).toFixed(2),
+      totalCredits,
+      countedCourses,
+    };
+  }, [courses, decrypted]);
 
   const handleDecrypt = async () => {
     const pinClean = String(pin || "").trim();
@@ -268,12 +286,18 @@ function Academic() {
           }
 
           if (!res.ok) {
+            const rawMessage = data?.message || text || "Không giải mã được điểm";
+            const friendlyMessage =
+              res.status === 404 || rawMessage.includes("Không tìm thấy điểm CRT")
+                ? "Chưa có điểm cho môn học này"
+                : rawMessage;
+
             return {
               ...course,
               GK: null,
               CK: null,
               DiemTrungBinh: null,
-              error: data?.message || text || "Không giải mã được điểm",
+              error: friendlyMessage,
             };
           }
 
@@ -479,11 +503,13 @@ function Academic() {
 
           <div className="summary__grid">
             <div className="summary__meta">
-              <div className="meta__label">Cumulative GPA</div>
-              <div className="meta__value">{gpa ?? "—"}</div>
+              <div className="meta__label">Semester GPA</div>
+              <div className="meta__value">{semesterSummary.gpa ?? "—"}</div>
             </div>
 
             <div className="summary__note">
+              Tính theo {semesterSummary.countedCourses} học phần / {semesterSummary.totalCredits} tín chỉ trong học kỳ {sem}, năm học {year}.
+              <br />
               Last Updated: {new Date().toLocaleDateString("vi-VN")}
             </div>
           </div>
