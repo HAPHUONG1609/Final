@@ -42,19 +42,20 @@ function Dashboard() {
     })();
   }, []);
 
-  // 2. Gọi API lấy lịch sử đăng nhập 
+  // Lấy 5 lần đăng nhập gần nhất để hiển thị ở Dashboard
   useEffect(() => {
     const fetchLoginHistory = async () => {
       try {
-        // Thêm ?t=... vào cuối URL để ép trình duyệt luôn gọi mới API
-        const res = await fetch(`http://localhost:3000/api/login-history?t=${new Date().getTime()}`, {
+        const res = await fetch(`http://localhost:3000/api/login-history?t=${Date.now()}`, {
           method: "GET",
-          credentials: "include", // Bắt buộc để gửi cookie lên server
+          credentials: "include",
         });
 
+        const data = await res.json();
+
         if (res.ok) {
-          const data = await res.json();
-          setLoginHistory(data);
+          const history = Array.isArray(data) ? data : (data.data || data.history || []);
+          setLoginHistory(history.slice(0, 5));
         }
       } catch (error) {
         console.error("Lỗi tải lịch sử đăng nhập:", error);
@@ -63,6 +64,20 @@ function Dashboard() {
 
     fetchLoginHistory();
   }, []);
+
+  const formatVietnamTime = (value) => {
+    if (!value) return "-";
+
+    return new Date(value).toLocaleString("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
 
   const onVerifyClick = async () => {
     alert("Verify action here!");
@@ -157,38 +172,44 @@ function Dashboard() {
           </ul>
         </div>
 
-        {/* 3. Render TOÀN BỘ lịch sử đăng nhập để kiểm tra */}
+        {/* Lịch sử đăng nhập đặt đúng ở Dashboard */}
         <div className="card list" style={{ minHeight: "250px" }}>
           <div className="list__title">Lịch sử đăng nhập (5 lần gần nhất)</div>
-          
+
           {loginHistory.length > 0 ? (
             <ul className="last__items" style={{ maxHeight: "250px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "15px", paddingRight: "5px" }}>
               {loginHistory.map((log, index) => (
                 <li key={index} style={{ borderBottom: "1px dashed #ddd", paddingBottom: "10px", listStyle: "none" }}>
                   <div style={{ fontWeight: "600", fontSize: "13px", color: index === 0 ? "#2563eb" : "#4b5563", marginBottom: "8px" }}>
-                    {index === 0 ? "Phiên đăng nhập hiện tại" : `Lần trước (${index+1})`}
+                    {index === 0 ? "Phiên đăng nhập gần nhất" : `Lần đăng nhập ${index + 1}`}
                   </div>
-                  
+
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
                     <span className="dot dot--time" />
                     <div style={{ fontSize: "12px", color: "#374151" }}>
-                      {new Date(log.THOI_GIAN.replace('Z', '')).toLocaleString("en-US", {
-                        month: "long", day: "numeric", year: "numeric",
-                        hour: "numeric", minute: "numeric", hour12: true,
-                      })}
+                      {formatVietnamTime(log.THOI_GIAN)}
                     </div>
                   </div>
-                  
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                    <span className="dot dot--loc" />
+                    <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                      IP: {log.IP_ADDRESS || "-"}
+                    </div>
+                  </div>
+
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <span className="dot dot--loc" />
-                    <div style={{ fontSize: "12px", color: "#6b7280" }}>{log.LOCATION}</div>
+                    <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                      Vị trí: {log.LOCATION || "-"}
+                    </div>
                   </div>
                 </li>
               ))}
             </ul>
           ) : (
             <div style={{ padding: "10px 0", color: "#888", fontSize: "14px" }}>
-              Đang tải dữ liệu...
+              Chưa có dữ liệu đăng nhập.
             </div>
           )}
         </div>

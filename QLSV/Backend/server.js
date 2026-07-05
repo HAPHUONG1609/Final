@@ -482,13 +482,16 @@ app.post("/login", (req, res) => {
     });
   });
 });
-// API Lấy lịch sử đăng nhập 
+// API lấy lịch sử đăng nhập: dùng ở Dashboard sinh viên
 app.get("/api/login-history", (req, res) => {
   if (!req.session?.user) {
-    return res.status(401).json({ message: "Chưa đăng nhập" });
+    return res.status(401).json({
+      success: false,
+      message: "Chưa đăng nhập",
+    });
   }
 
-  const username = req.session.user.user;
+  const username = req.session.user.username || req.session.user.user;
 
   sql.query(
     connectionString,
@@ -497,11 +500,49 @@ app.get("/api/login-history", (req, res) => {
     (err, rows) => {
       if (err) {
         console.error("Lỗi lấy lịch sử đăng nhập:", err);
-        return res.status(500).json({ message: "Lỗi máy chủ" });
+        return res.status(500).json({
+          success: false,
+          message: "Lỗi lấy lịch sử đăng nhập",
+        });
       }
 
       return res.json({
-        history: rows,
+        success: true,
+        data: rows || [],
+        history: rows || [],
+      });
+    }
+  );
+});
+
+// API lấy lịch sử đổi PIN: dùng ở trang My encryption key
+app.get("/api/pin-change-history", (req, res) => {
+  if (!req.session?.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Chưa đăng nhập",
+    });
+  }
+
+  const username = req.session.user.username || req.session.user.user;
+
+  sql.query(
+    connectionString,
+    `EXEC sp_LayLichSuDoiPin @User=?`,
+    [username],
+    (err, rows) => {
+      if (err) {
+        console.error("Lỗi lấy lịch sử đổi PIN:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Lỗi lấy lịch sử đổi PIN",
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: rows || [],
+        history: rows || [],
       });
     }
   );
@@ -587,12 +628,13 @@ app.put("/student/update", (req, res) => {
 // New Flow
 // 1. Sinh viên thiết lập/cập nhật mã PIN
 app.post("/api/set-pin", (req, res) => {
-
-  const mssv = req.session.user?.user;
+  const username = req.session.user?.username || req.session.user?.user;
+  const mssv = req.session.user?.relatedId || req.session.user?.id || req.session.user?.user;
   const { currentPin, newPin } = req.body;
 
-  if (!mssv || !currentPin || !newPin)
-    return res.status(400).json({ message: "Thiếu thông vị" });
+  if (!username || !mssv || !currentPin || !newPin) {
+    return res.status(400).json({ message: "Thiếu thông tin" });
+  }
 
   // Verify PIN cũ
   sql.query(
@@ -600,27 +642,43 @@ app.post("/api/set-pin", (req, res) => {
     `EXEC sp_VerifyPIN @MASV = ?, @PIN = ?`,
     [mssv, currentPin],
     (err, result) => {
-
-      if (err)
+      if (err) {
+        console.error("Lỗi verify PIN:", err);
         return res.status(500).json({ message: "Lỗi DB" });
+      }
 
       const valid = result[0]?.IsValid;
 
-      if (valid !== 1)
+      if (valid !== 1) {
         return res.status(401).json({ message: "PIN hiện tại không đúng" });
+      }
 
-      // Gọi stored procedure để hash và lưu PIN mới
+      // Hash và lưu PIN mới
       sql.query(
         connectionString,
         `EXEC dbo.HashAndSavePIN @id = ?, @pin = ?`,
         [mssv, newPin],
         (err) => {
-
-          if (err)
+          if (err) {
+            console.error("Lỗi cập nhật PIN:", err);
             return res.status(500).json({ message: "Lỗi cập nhật PIN" });
+          }
 
-          res.json({
-            message: "Cập nhật mã PIN thành công!"
+          // Ghi log đổi PIN để hiển thị ở trang My encryption key
+          sql.query(
+            connectionString,
+            `EXEC sp_GhiLogDoiPin @User = ?, @MaSV = ?`,
+            [username, mssv],
+            (logErr) => {
+              if (logErr) {
+                console.error("Lỗi ghi log đổi PIN:", logErr);
+              }
+            }
+          );
+
+          return res.json({
+            success: true,
+            message: "Cập nhật mã PIN thành công!",
           });
         }
       );

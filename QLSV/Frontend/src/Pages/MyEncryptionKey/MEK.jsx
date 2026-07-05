@@ -31,37 +31,46 @@ function EncryptionKey() {
 
   const formatDateTime = (value) => {
     if (!value) return "N/A";
-    return new Date(value).toLocaleString("vi-VN");
+
+    return new Date(value).toLocaleString("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  const fetchPinChangeHistory = async () => {
+    try {
+      setLogsLoading(true);
+      setLogsError("");
+
+      const res = await fetch("http://localhost:3000/api/pin-change-history", {
+        method: "GET",
+        credentials: "include"
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to load PIN change history");
+      }
+
+      const history = Array.isArray(data) ? data : (data.data || data.history || []);
+      setLogs(history.slice(0, 5));
+    } catch (error) {
+      console.error("Lỗi lấy lịch sử đổi PIN:", error);
+      setLogsError(error.message || "Failed to load PIN change history");
+    } finally {
+      setLogsLoading(false);
+    }
   };
 
   useEffect(() => {
-    const fetchLoginHistory = async () => {
-      try {
-        setLogsLoading(true);
-        setLogsError("");
-
-        const res = await fetch("http://localhost:3000/api/login-history", {
-          method: "GET",
-          credentials: "include"
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.message || "Failed to load login history");
-        }
-
-        const history = Array.isArray(data) ? data : (data.history || []);
-        setLogs(history.slice(0, 5));
-      } catch (error) {
-        console.error("Lỗi lấy lịch sử đăng nhập:", error);
-        setLogsError(error.message || "Failed to load login history");
-      } finally {
-        setLogsLoading(false);
-      }
-    };
-
-    fetchLoginHistory();
+    fetchPinChangeHistory();
   }, []);
 
   const submit = async (e) => {
@@ -114,6 +123,7 @@ function EncryptionKey() {
         confirm: ""
       });
 
+      await fetchPinChangeHistory();
       setLoading(false);
     } catch (error) {
       console.error(error);
@@ -159,7 +169,7 @@ function EncryptionKey() {
         {/* Logs */}
         <section className="card ek__logs">
           <div className="ek__title two">
-            Recent Update Logs
+            Recent PIN Update Logs
           </div>
 
           <div className="ek__logsTable">
@@ -181,7 +191,7 @@ function EncryptionKey() {
                 </div>
               ) : logs.length === 0 ? (
                 <div className="ek__logsRow">
-                  <div>No login history</div>
+                  <div>Chưa có lịch sử đổi PIN</div>
                   <div></div>
                 </div>
               ) : (
@@ -190,7 +200,7 @@ function EncryptionKey() {
                     <div className="mono">
                       {formatDateTime(log.THOI_GIAN)}
                     </div>
-                    <div>Student Login</div>
+                    <div>{log.HANH_DONG || "Đổi PIN"}</div>
                   </div>
                 ))
               )}
