@@ -1343,7 +1343,7 @@ app.post("/api/view-grades", async (req, res) => {
 
     if (!diemRows || diemRows.length === 0) {
       return res.status(404).json({
-        message: `Không tìm thấy điểm CRT của ${mssvClean} - ${courseIdClean}`
+        message: `Chưa có điểm cho môn học này`
       });
     }
 
