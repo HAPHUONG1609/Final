@@ -1,13 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import "./PersonalInfo.css";
-import Scur from "../../assets/icon/scurity.png";
-import Avt from "../../assets/icon/user.png";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 function PersonalInfo() {
-  const navigate = useNavigate();
   const [profile, setProfile] = useState({
     MaSV: "",
     HoTen: "",
@@ -75,66 +71,35 @@ function PersonalInfo() {
     console.log("Verify key clicked");
   };
 
-  const handleLogout = async () => {
+  const handleUpdate = async () => {
     try {
-      const res = await fetch(`${API_BASE}/student/logout`, {
-        method: "POST",
+      const res = await fetch(`${API_BASE}/student/update`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
         credentials: "include",
+        body: JSON.stringify({
+          noisinh: profile.NoiSinh
+        })
       });
-      if (!res.ok) throw new Error("Logout failed");
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      navigate("/login", { replace: true });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Update failed");
+      }
+
+      alert("Cập nhật thành công");
+      setIsEditing(false);
+
     } catch (err) {
-      console.error("Logout error:", err);
-      alert("Không thể đăng xuất. Vui lòng thử lại.");
+      alert("Cập nhật thất bại");
     }
   };
 
-  const handleUpdate = async () => {
-  try {
-    const res = await fetch(`${API_BASE}/student/update`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      credentials: "include",
-      body: JSON.stringify({
-        noisinh: profile.NoiSinh
-      })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.message || "Update failed");
-    }
-    
-    alert("Cập nhật thành công");
-    setIsEditing(false);
-
-  } catch (err) {
-    alert("Cập nhật thất bại");
-  }
-};
-
   return (
     <div className="pi-page">
-      {/* Header */}
-      <header className="pi-header">
-        <div className="pi-header__brand">
-          <img src={Scur} alt="CRT Encrypt" className="pi-header__logo" />
-          <span className="pi-header__name">CRT Encrypt</span>
-        </div>
-        <div className="pi-header__actions">
-          <button className="pi-header__logout" onClick={handleLogout}>
-            Logout <i className="fa-solid fa-right-from-bracket"></i>
-          </button>
-          <img src={Avt} alt="avatar" className="pi-header__avatar" />
-        </div>
-      </header>
-
-      {/* Main content */}
       <div className="pi">
         <div className="pi__card">
         <h1 className="pi__title">Personal Information</h1>
@@ -316,10 +281,6 @@ function PersonalInfo() {
         </button>
       </div>
       </div>
-
-      <footer className="pi__footer">
-        2025 CRT Encrypt. All right reserved.
-      </footer>
     </div>
   );
 }
