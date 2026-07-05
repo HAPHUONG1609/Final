@@ -1,83 +1,23 @@
 /* ========== PAGE WRAPPER ========== */
 .pi-page {
-  min-height: 100vh;
-  background: #e0f2fe;
+  min-height: 100%;
+  background: transparent;
   display: flex;
   flex-direction: column;
-}
-
-/* ========== HEADER ========== */
-.pi-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
-  background: #fff;
-  border-bottom: 1px solid var(--border);
-}
-
-.pi-header__brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.pi-header__logo {
-  width: 32px;
-  height: 32px;
-}
-
-.pi-header__name {
-  font-size: 16px;
-  font-weight: 700;
-  color: #0ea5e9;
-}
-
-.pi-header__actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.pi-header__logout {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: #ef4444;
-  color: #fff;
-  border: none;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s ease;
-}
-
-.pi-header__logout:hover {
-  background: #dc2626;
-}
-
-.pi-header__avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  object-fit: cover;
 }
 
 /* ========== MAIN CONTENT ========== */
 .pi {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px 24px;
+  justify-content: center;
+  align-items: stretch;
+  width: 100%;
 }
 
 .pi__card {
   width: 100%;
-  max-width: 900px;
+  max-width: 980px;
   background: #fff;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
@@ -266,15 +206,6 @@
   cursor: not-allowed;
 }
 
-/* ========== FOOTER ========== */
-.pi__footer {
-  padding: 24px 0;
-  text-align: center;
-  font-size: 13px;
-  color: #64748b;
-  background: #fff;
-}
-
 /* ========== RESPONSIVE ========== */
 @media (max-width: 900px) {
   .pi__card {
@@ -307,10 +238,6 @@
 }
 
 @media (max-width: 480px) {
-  .pi-header {
-    padding: 10px 16px;
-  }
-
   .pi__card {
     padding: 16px 16px 24px;
   }
