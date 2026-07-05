@@ -29,6 +29,7 @@ export default function App() {
         <Routes>
           {/* ===== LOGIN ===== */}
           <Route path="/" element={<Login />} />
+          <Route path="/login" element={<Login />} />
 
           {/* ===== STUDENT ===== */}
           <Route path="/student" element={<StudentSidebar />}>
