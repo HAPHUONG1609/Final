@@ -6,21 +6,18 @@ function AdminSidebar() {
   const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
   const onLogout = async () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
     try {
-      const res = await fetch(`${API_BASE}/auth/logout`, {
+      await fetch(`${API_BASE}/auth/logout`, {
         method: "POST",
         credentials: "include",
       });
-
-      if (!res.ok) throw new Error("Logout failed");
-
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-
-      navigate("/login", { replace: true });
     } catch (err) {
       console.error("Logout error:", err);
-      alert("Không thể đăng xuất. Vui lòng thử lại.");
+    } finally {
+      navigate("/login", { replace: true });
     }
   };
 
