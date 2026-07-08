@@ -4,6 +4,9 @@ import Pagination from "../../components/Pagination/Pagination";
 
 const ITEMS_PER_PAGE = 5;
 const API_BASE = "http://localhost:3000";
+const CURRENT_GRADE_YEAR = "2025-2026";
+const CURRENT_GRADE_SEMESTER = 2;
+
 
 const inputStyle = {
   backgroundColor: "#fff",
@@ -53,6 +56,8 @@ function ManageGrades() {
 
   const [courses, setCourses] = useState([]);
   const [currentCourseId, setCurrentCourseId] = useState("");
+  const [courseSearch, setCourseSearch] = useState("");
+  const [showCourseDropdown, setShowCourseDropdown] = useState(false);
 
   const [students, setStudents] = useState([]);
 
@@ -76,6 +81,32 @@ function ManageGrades() {
     () => courses.find((course) => String(course.MaHP).trim() === String(currentCourseId).trim()),
     [courses, currentCourseId]
   );
+
+  const normalizeText = (value) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+  const filteredCourses = useMemo(() => {
+    const keyword = normalizeText(courseSearch);
+
+    if (!keyword) return courses;
+
+    return courses.filter((course) => {
+      const maHp = normalizeText(course.MaHP);
+      const tenHp = normalizeText(course.TenHP);
+      return maHp.includes(keyword) || tenHp.includes(keyword);
+    });
+  }, [courses, courseSearch]);
+
+  const chooseCourse = (course) => {
+    const maHp = String(course.MaHP || "").trim();
+    setCurrentCourseId(maHp);
+    setCourseSearch(`${maHp} - ${course.TenHP || ""}`);
+    setShowCourseDropdown(false);
+  };
 
   const totalPages = Math.ceil(students.length / ITEMS_PER_PAGE);
   const paginatedStudents = students.slice(
@@ -130,7 +161,15 @@ function ManageGrades() {
         const data = await response.json();
 
         if (!dead) {
-          setAcademicYears(Array.isArray(data) ? data : []);
+          const list = Array.isArray(data) ? data : [];
+          const currentYear =
+            list.find((item) => String(item.NamHoc || "").trim() === CURRENT_GRADE_YEAR) ||
+            { NamHoc: CURRENT_GRADE_YEAR };
+
+          // Trang nhập điểm chỉ dành cho học kỳ hiện tại: 2025-2026 HK2.
+          // HK1 và các học kỳ cũ đã được seed bằng seedHistoricalEncryptedGrades_CRT.js.
+          setAcademicYears([currentYear]);
+          setCurrentAcademicYear(CURRENT_GRADE_YEAR);
         }
       } catch (error) {
         if (!dead) {
@@ -154,55 +193,31 @@ function ManageGrades() {
       setCurrentSemester("");
       setCourses([]);
       setCurrentCourseId("");
+      setCourseSearch("");
+      setShowCourseDropdown(false);
       setStudents([]);
       return;
     }
 
-    let dead = false;
-
-    (async () => {
-      try {
-        setLoadingSemesters(true);
-        setErrSemesters("");
-
-        const response = await fetch(`${API_BASE}/api/semesters/${currentAcademicYear}`, {
-          method: "GET",
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (!dead) {
-          setSemesters(Array.isArray(data) ? data : []);
-          setCurrentSemester("");
-          setCourses([]);
-          setCurrentCourseId("");
-          setStudents([]);
-        }
-      } catch (error) {
-        if (!dead) {
-          setErrSemesters(error.message || "Không tải được danh sách học kỳ");
-        }
-      } finally {
-        if (!dead) {
-          setLoadingSemesters(false);
-        }
-      }
-    })();
-
-    return () => {
-      dead = true;
-    };
+    // Chỉ cho nhập điểm học kỳ 2 của năm học hiện tại.
+    // Không gọi danh sách học kỳ từ DB nữa để tránh hiện HK1 đã được seed sẵn.
+    setLoadingSemesters(false);
+    setErrSemesters("");
+    setSemesters([{ HocKy: CURRENT_GRADE_SEMESTER }]);
+    setCurrentSemester(String(CURRENT_GRADE_SEMESTER));
+    setCourses([]);
+    setCurrentCourseId("");
+    setCourseSearch("");
+    setShowCourseDropdown(false);
+    setStudents([]);
   }, [currentAcademicYear]);
 
   useEffect(() => {
     if (!currentAcademicYear || !currentSemester) {
       setCourses([]);
       setCurrentCourseId("");
+      setCourseSearch("");
+      setShowCourseDropdown(false);
       setStudents([]);
       return;
     }
@@ -231,6 +246,8 @@ function ManageGrades() {
         if (!dead) {
           setCourses(Array.isArray(data) ? data : []);
           setCurrentCourseId("");
+          setCourseSearch("");
+          setShowCourseDropdown(false);
           setStudents([]);
         }
       } catch (error) {
@@ -466,6 +483,15 @@ function ManageGrades() {
         return;
       }
 
+      if (
+        String(currentAcademicYear).trim() !== CURRENT_GRADE_YEAR ||
+        Number(currentSemester) !== CURRENT_GRADE_SEMESTER
+      ) {
+        alert(`Chỉ import điểm cho ${CURRENT_GRADE_YEAR} học kỳ ${CURRENT_GRADE_SEMESTER}.`);
+        event.target.value = "";
+        return;
+      }
+
       if (students.length === 0) {
         alert("Chưa có danh sách sinh viên để import điểm");
         event.target.value = "";
@@ -589,6 +615,14 @@ function ManageGrades() {
       return false;
     }
 
+    if (
+      String(currentAcademicYear).trim() !== CURRENT_GRADE_YEAR ||
+      Number(currentSemester) !== CURRENT_GRADE_SEMESTER
+    ) {
+      alert(`Chỉ được nhập điểm cho ${CURRENT_GRADE_YEAR} học kỳ ${CURRENT_GRADE_SEMESTER}. HK1 và các học kỳ cũ đã được seed.`);
+      return false;
+    }
+
     if (!currentCourseId) {
       alert("Vui lòng chọn học phần");
       return false;
@@ -693,7 +727,7 @@ function ManageGrades() {
       <div style={{ marginBottom: "4px" }}>
         <h1 style={{ fontSize: "20px", fontWeight: "bold", color: "#fff" }}>Quản lý Điểm</h1>
         <p style={{ color: "#94a3b8", fontSize: "13px", marginTop: "4px" }}>
-          Import file Excel, nhập PIN và mã hóa điểm sinh viên bằng CRT
+          Chỉ import điểm học kỳ 2 năm 2025-2026; HK1 và điểm cũ đã được seed CRT
         </p>
       </div>
 
@@ -722,7 +756,7 @@ function ManageGrades() {
             <select
               value={currentAcademicYear}
               onChange={(event) => setCurrentAcademicYear(event.target.value)}
-              disabled={loadingYears}
+              disabled={loadingYears || academicYears.length <= 1}
               style={inputStyle}
             >
               <option value="">{loadingYears ? "Đang tải..." : "Chọn năm học"}</option>
@@ -750,7 +784,7 @@ function ManageGrades() {
             <select
               value={currentSemester}
               onChange={(event) => setCurrentSemester(event.target.value)}
-              disabled={!currentAcademicYear || loadingSemesters}
+              disabled={!currentAcademicYear || loadingSemesters || semesters.length <= 1}
               style={{ ...inputStyle, color: "#3b82f6" }}
             >
               <option value="">
@@ -777,25 +811,72 @@ function ManageGrades() {
             >
               Học phần
             </label>
-            <select
-              value={currentCourseId}
-              onChange={(event) => setCurrentCourseId(event.target.value)}
-              disabled={!currentSemester || loadingCourses}
-              style={{
-                ...inputStyle,
-                color: "#3b82f6",
-                border: currentCourseId ? "2px solid #3b82f6" : "none",
-              }}
-            >
-              <option value="">
-                {loadingCourses ? "Đang tải..." : "Chọn học phần"}
-              </option>
-              {courses.map((course) => (
-                <option key={course.MaHP} value={course.MaHP}>
-                  {course.MaHP} - {course.TenHP}
-                </option>
-              ))}
-            </select>
+            <div style={{ position: "relative" }}>
+              <input
+                type="text"
+                value={courseSearch}
+                onChange={(event) => {
+                  setCourseSearch(event.target.value);
+                  setCurrentCourseId("");
+                  setShowCourseDropdown(true);
+                }}
+                onFocus={() => setShowCourseDropdown(true)}
+                disabled={!currentSemester || loadingCourses}
+                placeholder={loadingCourses ? "Đang tải..." : "Nhập mã HP hoặc tên học phần"}
+                autoComplete="off"
+                style={{
+                  ...inputStyle,
+                  width: "100%",
+                  cursor: !currentSemester || loadingCourses ? "not-allowed" : "text",
+                  color: "#2563eb",
+                  border: currentCourseId ? "2px solid #3b82f6" : "2px solid rgba(148,163,184,0.55)",
+                }}
+              />
+
+              {showCourseDropdown && currentSemester && !loadingCourses && (
+                <div
+                  style={{
+                    position: "absolute",
+                    zIndex: 50,
+                    top: "44px",
+                    left: 0,
+                    right: 0,
+                    maxHeight: "260px",
+                    overflowY: "auto",
+                    backgroundColor: "#fff",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    boxShadow: "0 12px 24px rgba(15, 23, 42, 0.25)",
+                  }}
+                >
+                  {filteredCourses.length > 0 ? (
+                    filteredCourses.map((course) => (
+                      <div
+                        key={`${course.MaHP}-${course.NamHoc}-${course.HocKy}-${course.MaLop || ""}`}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          chooseCourse(course);
+                        }}
+                        style={{
+                          padding: "11px 12px",
+                          cursor: "pointer",
+                          borderBottom: "1px solid #e2e8f0",
+                          color: "#2563eb",
+                          fontSize: "13px",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {course.MaHP} - {course.TenHP}
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ padding: "12px", color: "#64748b", fontSize: "13px" }}>
+                      Không tìm thấy học phần phù hợp
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             {errCourses && <span style={{ color: "#f87171", fontSize: "12px" }}>{errCourses}</span>}
           </div>
 
@@ -859,9 +940,6 @@ function ManageGrades() {
                   {selectedCourse.TenHP}
                 </h3>
                 <p style={{ fontSize: "12px", color: "#60a5fa" }}>Mã HP: {selectedCourse.MaHP}</p>
-                <p style={{ fontSize: "12px", color: "#60a5fa" }}>
-                  GV: {selectedCourse.teacher || selectedCourse.GIANGVIEN || selectedCourse.GiangVien || "Chưa có dữ liệu"}
-                </p>
                 <p style={{ fontSize: "12px", color: "#60a5fa" }}>
                   Số sinh viên: {selectedCourse.totalStudents || selectedCourse.TotalStudents || selectedCourse.SoSinhVien || students.length}
                 </p>
