@@ -65,9 +65,9 @@ function Dashboard() {
     fetchLoginHistory();
   }, []);
 
-  const formatVietnamTime = (value) => {
+  const formatVietnamTime = (value, textValue) => {
+    if (textValue) return textValue;
     if (!value) return "-";
-
     return new Date(value).toLocaleString("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh",
       hour: "2-digit",
@@ -172,38 +172,44 @@ function Dashboard() {
           </ul>
         </div>
 
-        {/* Lịch sử đăng nhập đặt đúng ở Dashboard */}
+        {/* Lịch sử đăng nhập: chỉ hiển thị ngày giờ đăng nhập */}
         <div className="card list" style={{ minHeight: "250px" }}>
           <div className="list__title">Lịch sử đăng nhập (5 lần gần nhất)</div>
 
           {loginHistory.length > 0 ? (
-            <ul className="last__items" style={{ maxHeight: "250px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "15px", paddingRight: "5px" }}>
+            <ul
+              className="last__items"
+              style={{
+                maxHeight: "250px",
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                paddingRight: "5px",
+              }}
+            >
               {loginHistory.map((log, index) => (
-                <li key={index} style={{ borderBottom: "1px dashed #ddd", paddingBottom: "10px", listStyle: "none" }}>
-                  <div style={{ fontWeight: "600", fontSize: "13px", color: index === 0 ? "#2563eb" : "#4b5563", marginBottom: "8px" }}>
-                    {index === 0 ? "Phiên đăng nhập gần nhất" : `Lần đăng nhập ${index + 1}`}
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                    <span className="dot dot--time" />
-                    <div style={{ fontSize: "12px", color: "#374151" }}>
-                      {formatVietnamTime(log.THOI_GIAN)}
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                    <span className="dot dot--loc" />
-                    <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                      IP: {log.IP_ADDRESS || "-"}
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span className="dot dot--loc" />
-                    <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                      Vị trí: {log.LOCATION || "-"}
-                    </div>
-                  </div>
+                <li
+                  key={index}
+                  style={{
+                    borderBottom: "1px dashed #ddd",
+                    paddingBottom: "10px",
+                    listStyle: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <span className="dot dot--time" />
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: index === 0 ? "700" : "500",
+                      color: index === 0 ? "#2563eb" : "#374151",
+                    }}
+                  >
+                    {formatVietnamTime(log.THOI_GIAN, log.THOI_GIAN_TEXT)}
+                  </span>
                 </li>
               ))}
             </ul>

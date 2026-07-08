@@ -57,6 +57,296 @@ function decryptAES(encryptedData, aesKey) {
 }
 
 
+function getAuthUser(req) {
+  const user = req.session?.user;
+
+  if (!user) {
+    return {
+      isLoggedIn: false,
+      isAdmin: false,
+      isTeacher: false,
+      isStudent: false,
+      relatedId: "",
+      roleName: "",
+      username: "",
+    };
+  }
+
+  const roleName = String(
+    user.roleName ||
+    user.roleRaw ||
+    user.ROLE ||
+    user.role ||
+    ""
+  )
+    .trim()
+    .toUpperCase();
+
+  const relatedId = String(
+    user.relatedId ||
+    user.RELATED_ID ||
+    user.id ||
+    ""
+  ).trim();
+
+  const isAdmin = roleName === "ADMIN" || roleName === "1";
+  const isTeacher =
+    roleName === "GIANGVIEN" ||
+    roleName === "GIẢNGVIÊN" ||
+    roleName === "GV";
+  const isStudent =
+    roleName === "SINHVIEN" ||
+    roleName === "SINH VIÊN" ||
+    roleName === "STUDENT" ||
+    roleName === "SV" ||
+    roleName === "0";
+
+  return {
+    isLoggedIn: true,
+    isAdmin,
+    isTeacher,
+    isStudent,
+    relatedId,
+    roleName,
+    username: user.username || user.user || "",
+  };
+}
+
+/* ==================== HELPER ASYNC + CRT GRADE SERVICE ==================== */
+const JAVA_GRADE_CRT_BASE = "http://localhost:8080/internal/crypto/grade-crt";
+
+function queryAsync(query, params = []) {
+  return new Promise((resolve, reject) => {
+    sql.query(connectionString, query, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows || []);
+    });
+  });
+}
+
+async function postJson(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const text = await response.text();
+  let data = null;
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!response.ok) {
+    const msg = data?.message || data?.error || text || `HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+
+  return data;
+}
+
+async function calculatePublicKeyFromPin(pin) {
+  const data = await postJson(`${JAVA_GRADE_CRT_BASE}/public-key`, { pin });
+  const publicKey = String(data.publicKey || "").trim();
+
+  if (!publicKey) {
+    throw new Error("Java không trả về PUBLIC_KEY mới");
+  }
+
+  return publicKey;
+}
+
+async function calculatePrimeRange({ maKhoa, maLop, mssv, maHp, publicKey, pin }) {
+  const data = await postJson(`${JAVA_GRADE_CRT_BASE}/prime-range`, {
+    maKhoa: String(maKhoa || "").trim(),
+    maLop: String(maLop || "").trim(),
+    mssv: String(mssv || "").trim(),
+    maHp: String(maHp || "").trim(),
+    N: 5000000,
+    publicKey: String(publicKey || "").trim(),
+    pin: String(pin || "").trim(),
+  });
+
+  const startIndex = Number(data.startIndex);
+  const endIndex = Number(data.endIndex);
+
+  if (!Number.isFinite(startIndex) || !Number.isFinite(endIndex)) {
+    throw new Error("Java prime-range không trả về startIndex/endIndex hợp lệ");
+  }
+
+  return { startIndex, endIndex };
+}
+
+async function getPrimesByRange(startIndex, endIndex) {
+  const rows = await queryAsync(
+    `
+      SELECT Id, Primes
+      FROM SNT
+      WHERE Id BETWEEN ? AND ?
+      ORDER BY Id
+    `,
+    [startIndex, endIndex]
+  );
+
+  if (!rows || rows.length !== 3) {
+    throw new Error(`Không lấy đủ 3 số nguyên tố từ bảng SNT. startIndex=${startIndex}, endIndex=${endIndex}, count=${rows ? rows.length : 0}`);
+  }
+
+  const primes = rows.map((row) => String(row.Primes || "").trim());
+
+  if (primes.some((p) => !p)) {
+    throw new Error("Danh sách số nguyên tố có giá trị rỗng");
+  }
+
+  return primes;
+}
+
+async function decryptGradeCrt({ mssv, C, primes }) {
+  const data = await postJson(`${JAVA_GRADE_CRT_BASE}/decrypt`, {
+    mssv,
+    C,
+    primes,
+  });
+
+  if (!Array.isArray(data.plaintext)) {
+    throw new Error("Java decrypt không trả về plaintext hợp lệ");
+  }
+
+  const plaintext = data.plaintext.map((x) => Number(x));
+
+  if (
+    plaintext.length !== 3 ||
+    plaintext.some((x) => !Number.isFinite(x) || x < 0 || x > 100)
+  ) {
+    throw new Error(`Plaintext không hợp lệ sau khi giải mã: ${JSON.stringify(data.plaintext)}`);
+  }
+
+  return plaintext;
+}
+
+async function encryptGradeCrt({ mssv, plaintext, primes }) {
+  const data = await postJson(`${JAVA_GRADE_CRT_BASE}/encrypt`, {
+    mssv,
+    diem: plaintext,
+    primes,
+  });
+
+  const C = String(data.C || "").trim();
+
+  if (!C) {
+    throw new Error("Java encrypt không trả về C");
+  }
+
+  return C;
+}
+
+async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, newPin }) {
+  const svRows = await queryAsync(
+    `
+      SELECT
+        LTRIM(RTRIM(MaSV)) AS MaSV,
+        LTRIM(RTRIM(MaLop)) AS MaLop,
+        LTRIM(RTRIM(Khoa)) AS MaKhoa
+      FROM SINH_VIEN
+      WHERE UPPER(LTRIM(RTRIM(MaSV))) = UPPER(?)
+    `,
+    [mssv]
+  );
+
+  if (!svRows || svRows.length === 0) {
+    throw new Error(`Không tìm thấy sinh viên ${mssv}`);
+  }
+
+  const sv = svRows[0];
+  const gradeRows = await queryAsync(
+    `
+      SELECT
+        LTRIM(RTRIM(MASV)) AS MASV,
+        LTRIM(RTRIM(MAHP)) AS MAHP,
+        LTRIM(RTRIM(MAGV)) AS MAGV,
+        C
+      FROM DIEM_CRT
+      WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
+    `,
+    [mssv]
+  );
+
+  const updates = [];
+
+  for (const row of gradeRows) {
+    const maHp = String(row.MAHP || "").trim();
+    const maGv = String(row.MAGV || "").trim();
+    const oldC = String(row.C || "").trim();
+
+    if (!maHp || !maGv || !oldC) {
+      throw new Error(`DIEM_CRT thiếu MAHP/MAGV/C cho sinh viên ${mssv}`);
+    }
+
+    const gvRows = await queryAsync(
+      `
+        SELECT LTRIM(RTRIM(MaGV)) AS MaGV, PUBLIC_KEY
+        FROM GIANG_VIEN
+        WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
+      `,
+      [maGv]
+    );
+
+    if (!gvRows || gvRows.length === 0) {
+      throw new Error(`Không tìm thấy giảng viên ${maGv} khi đổi PIN`);
+    }
+
+    const gvPublicKey = String(gvRows[0].PUBLIC_KEY || "").trim();
+
+    if (!gvPublicKey) {
+      throw new Error(`Giảng viên ${maGv} chưa có PUBLIC_KEY`);
+    }
+
+    // Bước 1: giải mã C hiện tại bằng PIN cũ của sinh viên.
+    // Đây là đúng flow giải mã cũ: PUBLIC_KEY giảng viên + PIN sinh viên.
+    const oldRange = await calculatePrimeRange({
+      maKhoa: sv.MaKhoa,
+      maLop: sv.MaLop,
+      mssv,
+      maHp,
+      publicKey: gvPublicKey,
+      pin: currentPin,
+    });
+    const oldPrimes = await getPrimesByRange(oldRange.startIndex, oldRange.endIndex);
+    const plaintext = await decryptGradeCrt({ mssv, C: oldC, primes: oldPrimes });
+
+    // Bước 2: mã hóa lại C theo PIN mới.
+    // Dùng PUBLIC_KEY giảng viên + PIN mới để sinh cùng sharedSecret mà giảng viên sẽ sinh
+    // ở các lần nhập điểm sau bằng PUBLIC_KEY sinh viên mới + PIN giảng viên.
+    const newRange = await calculatePrimeRange({
+      maKhoa: sv.MaKhoa,
+      maLop: sv.MaLop,
+      mssv,
+      maHp,
+      publicKey: gvPublicKey,
+      pin: newPin,
+    });
+    const newPrimes = await getPrimesByRange(newRange.startIndex, newRange.endIndex);
+    const newC = await encryptGradeCrt({ mssv, plaintext, primes: newPrimes });
+
+    updates.push({
+      maHp,
+      maGv,
+      oldC,
+      newC,
+      plaintext,
+      oldRange,
+      newRange,
+    });
+  }
+
+  return updates;
+}
+
+
+
 /* ---------- 2. Hàm chính để thêm sinh viên ---------- */
 async function createStudent(
   mssv,
@@ -516,36 +806,43 @@ app.get("/api/login-history", (req, res) => {
 });
 
 // API lấy lịch sử đổi PIN: dùng ở trang My encryption key
-app.get("/api/pin-change-history", (req, res) => {
-  if (!req.session?.user) {
-    return res.status(401).json({
-      success: false,
-      message: "Chưa đăng nhập",
-    });
-  }
-
-  const username = req.session.user.username || req.session.user.user;
-
-  sql.query(
-    connectionString,
-    `EXEC sp_LayLichSuDoiPin @User=?`,
-    [username],
-    (err, rows) => {
-      if (err) {
-        console.error("Lỗi lấy lịch sử đổi PIN:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Lỗi lấy lịch sử đổi PIN",
-        });
-      }
-
-      return res.json({
-        success: true,
-        data: rows || [],
-        history: rows || [],
+app.get("/api/pin-change-history", async (req, res) => {
+  try {
+    if (!req.session?.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Chưa đăng nhập",
       });
     }
-  );
+
+    const username = req.session.user.username || req.session.user.user;
+
+    const rows = await queryAsync(
+      `
+        SELECT TOP 5
+          THOI_GIAN,
+          CONVERT(VARCHAR(19), THOI_GIAN, 120) AS THOI_GIAN_TEXT,
+          HANH_DONG
+        FROM LICH_SU_DOI_PIN
+        WHERE USERNAME = ?
+        ORDER BY THOI_GIAN DESC
+      `,
+      [username]
+    );
+
+    return res.json({
+      success: true,
+      data: rows || [],
+      history: rows || [],
+    });
+  } catch (err) {
+    console.error("Lỗi lấy lịch sử đổi PIN:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi lấy lịch sử đổi PIN. Hãy chạy file SQL fix_log_doi_pin_va_doi_pin_crt.sql",
+      detail: err.message,
+    });
+  }
 });
 
 /* ---------- 7. Lấy danh sách lớp ---------- */
@@ -627,63 +924,120 @@ app.put("/student/update", (req, res) => {
 
 // New Flow
 // 1. Sinh viên thiết lập/cập nhật mã PIN
-app.post("/api/set-pin", (req, res) => {
-  const username = req.session.user?.username || req.session.user?.user;
-  const mssv = req.session.user?.relatedId || req.session.user?.id || req.session.user?.user;
-  const { currentPin, newPin } = req.body;
+// Lưu ý quan trọng:
+// - PIN sinh viên cũng là private key trong flow Diffie-Hellman + CRT.
+// - Nếu chỉ đổi PIN_HASH mà không mã hóa lại DIEM_CRT thì điểm cũ sẽ không giải mã được.
+// - Vì vậy API này giải mã điểm cũ bằng PIN cũ, mã hóa lại theo PIN mới, rồi mới cập nhật PIN/PUBLIC_KEY.
+app.post("/api/set-pin", async (req, res) => {
+  try {
+    const auth = getAuthUser(req);
 
-  if (!username || !mssv || !currentPin || !newPin) {
-    return res.status(400).json({ message: "Thiếu thông tin" });
-  }
+    if (!auth.isLoggedIn) {
+      return res.status(401).json({ message: "Chưa đăng nhập" });
+    }
 
-  // Verify PIN cũ
-  sql.query(
-    connectionString,
-    `EXEC sp_VerifyPIN @MASV = ?, @PIN = ?`,
-    [mssv, currentPin],
-    (err, result) => {
-      if (err) {
-        console.error("Lỗi verify PIN:", err);
-        return res.status(500).json({ message: "Lỗi DB" });
-      }
+    if (!auth.isStudent) {
+      return res.status(403).json({
+        message: "Chỉ sinh viên mới được đổi PIN tại trang My encryption key",
+      });
+    }
 
-      const valid = result[0]?.IsValid;
+    const username = req.session.user?.username || req.session.user?.user;
+    const mssv = String(
+      req.session.user?.relatedId ||
+      req.session.user?.id ||
+      req.session.user?.user ||
+      ""
+    ).trim();
 
-      if (valid !== 1) {
-        return res.status(401).json({ message: "PIN hiện tại không đúng" });
-      }
+    const currentPin = String(req.body.currentPin || "").trim();
+    const newPin = String(req.body.newPin || "").trim();
 
-      // Hash và lưu PIN mới
-      sql.query(
-        connectionString,
-        `EXEC dbo.HashAndSavePIN @id = ?, @pin = ?`,
-        [mssv, newPin],
-        (err) => {
-          if (err) {
-            console.error("Lỗi cập nhật PIN:", err);
-            return res.status(500).json({ message: "Lỗi cập nhật PIN" });
-          }
+    if (!username || !mssv || !currentPin || !newPin) {
+      return res.status(400).json({ message: "Thiếu thông tin" });
+    }
 
-          // Ghi log đổi PIN để hiển thị ở trang My encryption key
-          sql.query(
-            connectionString,
-            `EXEC sp_GhiLogDoiPin @User = ?, @MaSV = ?`,
-            [username, mssv],
-            (logErr) => {
-              if (logErr) {
-                console.error("Lỗi ghi log đổi PIN:", logErr);
-              }
-            }
-          );
+    if (!/^\d+$/.test(currentPin) || !/^\d+$/.test(newPin)) {
+      return res.status(400).json({ message: "PIN phải là số" });
+    }
 
-          return res.json({
-            success: true,
-            message: "Cập nhật mã PIN thành công!",
-          });
-        }
+    if (newPin.length < 4) {
+      return res.status(400).json({ message: "PIN mới phải có ít nhất 4 chữ số" });
+    }
+
+    if (currentPin === newPin) {
+      return res.status(400).json({ message: "PIN mới phải khác PIN hiện tại" });
+    }
+
+    // 1. Kiểm tra PIN cũ.
+    const verifyRows = await queryAsync(
+      `EXEC sp_VerifyPIN @MASV = ?, @PIN = ?`,
+      [mssv, currentPin]
+    );
+
+    const valid = Number(verifyRows[0]?.IsValid || 0);
+
+    if (valid !== 1) {
+      return res.status(401).json({ message: "PIN hiện tại không đúng" });
+    }
+
+    // 2. Chuẩn bị mã hóa lại toàn bộ điểm cũ theo PIN mới.
+    // Nếu bước này lỗi, chưa cập nhật PIN để tránh làm điểm cũ bị mất khả năng giải mã.
+    const gradeUpdates = await prepareReEncryptStudentGradesAfterPinChange({
+      mssv,
+      currentPin,
+      newPin,
+    });
+
+    // 3. Tạo PUBLIC_KEY mới từ PIN mới.
+    const newPublicKey = await calculatePublicKeyFromPin(newPin);
+
+    // 4. Cập nhật C mới cho các điểm đã có.
+    for (const item of gradeUpdates) {
+      await queryAsync(
+        `
+          UPDATE DIEM_CRT
+          SET C = ?, UPDATED_AT = GETDATE()
+          WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
+            AND UPPER(LTRIM(RTRIM(MAHP))) = UPPER(?)
+        `,
+        [item.newC, mssv, item.maHp]
       );
     }
-  );
+
+    // 5. Cập nhật PIN hash và PUBLIC_KEY sinh viên.
+    await queryAsync(
+      `EXEC dbo.HashAndSavePIN @id = ?, @pin = ?`,
+      [mssv, newPin]
+    );
+
+    await queryAsync(
+      `
+        UPDATE SINH_VIEN
+        SET PUBLIC_KEY = ?
+        WHERE UPPER(LTRIM(RTRIM(MaSV))) = UPPER(?)
+      `,
+      [newPublicKey, mssv]
+    );
+
+    // 6. Ghi log đổi PIN.
+    await queryAsync(
+      `EXEC sp_GhiLogDoiPin @User = ?, @MaSV = ?`,
+      [username, mssv]
+    );
+
+    return res.json({
+      success: true,
+      message: "Cập nhật mã PIN thành công. Các điểm cũ đã được mã hóa lại để dùng PIN mới giải mã.",
+      reEncryptedGrades: gradeUpdates.length,
+    });
+  } catch (err) {
+    console.error("Lỗi cập nhật PIN:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi cập nhật PIN: " + err.message,
+    });
+  }
 });
 
 
@@ -704,6 +1058,26 @@ app.post("/api/set-pin", (req, res) => {
 // Không lưu START_INDEX / END_INDEX.
 app.post("/admin/nhap-diem", async (req, res) => {
   try {
+    const auth = getAuthUser(req);
+
+    if (!auth.isLoggedIn) {
+      return res.status(401).json({
+        message: "Chưa đăng nhập",
+      });
+    }
+
+    if (auth.isAdmin) {
+      return res.status(403).json({
+        message: "Admin chỉ xem hệ thống, không được nhập điểm",
+      });
+    }
+
+    if (!auth.isTeacher) {
+      return res.status(403).json({
+        message: "Chỉ giảng viên mới được nhập điểm",
+      });
+    }
+
     console.log("========== API /admin/nhap-diem ==========");
     console.log("BODY:", req.body);
     console.log("SESSION:", req.session);
@@ -798,16 +1172,15 @@ app.post("/admin/nhap-diem", async (req, res) => {
     ).trim();
 
     if (!maGv) {
-      return res.status(500).json({
-        message: `Học phần ${courseIdClean} chưa có MaGV/GiangVien`,
+      return res.status(400).json({
+        message: "Học phần chưa có giảng viên phụ trách",
         data: hpRows[0]
       });
     }
 
-    if (!maGv) {
-      return res.status(500).json({
-        message: `Học phần ${courseIdClean} chưa có mã giảng viên GV`,
-        data: hpRows[0]
+    if (maGv.trim().toUpperCase() !== auth.relatedId.trim().toUpperCase()) {
+      return res.status(403).json({
+        message: `Bạn không được nhập điểm học phần này. Học phần thuộc giảng viên ${maGv}`,
       });
     }
 
@@ -2375,6 +2748,26 @@ app.get("/api/schedule", (req, res) => {
 /* ---------- Lấy danh sách học phần theo học kì, năm học của admin  ---------- */
 app.get("/api/courses/:namhoc/:hocky", (req, res) => {
   const { namhoc, hocky } = req.params;
+  const auth = getAuthUser(req);
+
+  if (!auth.isLoggedIn) {
+    return res.status(401).json({
+      message: "Chưa đăng nhập",
+    });
+  }
+
+  // Flow mới: Admin chỉ xem hệ thống, không nhập điểm nên không lấy danh sách học phần ở màn hình nhập điểm.
+  if (auth.isAdmin) {
+    return res.status(403).json({
+      message: "Admin chỉ xem hệ thống, không được nhập điểm",
+    });
+  }
+
+  if (!auth.isTeacher) {
+    return res.status(403).json({
+      message: "Chỉ giảng viên mới được xem học phần nhập điểm",
+    });
+  }
 
   if (!namhoc || !hocky) {
     return res.status(400).json({
@@ -2382,17 +2775,17 @@ app.get("/api/courses/:namhoc/:hocky", (req, res) => {
     });
   }
 
-  const q = `
+  const query = `
     SELECT
       LTRIM(RTRIM(hp.MaHP)) AS MaHP,
       hp.TenHP,
       hp.SoTinChi,
       hp.HocKy,
       LTRIM(RTRIM(hp.NamHoc)) AS NamHoc,
-      hp.MaLop,
+      LTRIM(RTRIM(hp.MaLop)) AS MaLop,
       hp.LichHoc,
       hp.GiangVien,
-      hp.MaGV,
+      LTRIM(RTRIM(hp.MaGV)) AS MaGV,
       COUNT(DISTINCT tkb.MASV) AS SoSinhVien
     FROM HOC_PHAN hp
     LEFT JOIN THOI_KHOA_BIEU tkb
@@ -2401,36 +2794,124 @@ app.get("/api/courses/:namhoc/:hocky", (req, res) => {
       AND LTRIM(RTRIM(hp.NamHoc)) = LTRIM(RTRIM(tkb.NamHoc))
     WHERE LTRIM(RTRIM(hp.NamHoc)) = ?
       AND hp.HocKy = ?
+      AND UPPER(LTRIM(RTRIM(hp.MaGV))) = UPPER(?)
     GROUP BY
-      hp.MaHP, hp.TenHP, hp.SoTinChi, hp.HocKy, hp.NamHoc,
-      hp.MaLop, hp.LichHoc, hp.GiangVien, hp.MaGV
+      hp.MaHP,
+      hp.TenHP,
+      hp.SoTinChi,
+      hp.HocKy,
+      hp.NamHoc,
+      hp.MaLop,
+      hp.LichHoc,
+      hp.GiangVien,
+      hp.MaGV
     ORDER BY hp.MaHP
   `;
 
-  sql.query(connectionString, q, [namhoc.trim(), Number(hocky)], (err, rows) => {
-    if (err) {
-      console.error("Lỗi lấy học phần:", err);
-      return res.status(500).json({ message: "Lỗi server" });
-    }
+  sql.query(
+    connectionString,
+    query,
+    [namhoc.trim(), Number(hocky), auth.relatedId],
+    (err, rows) => {
+      if (err) {
+        console.error("Lỗi lấy danh sách học phần:", err);
+        return res.status(500).json({
+          message: "Lỗi server khi lấy danh sách học phần",
+        });
+      }
 
-    res.json(rows);
-  });
+      return res.json(rows || []);
+    }
+  );
 });
 
 /* ---------- Lấy danh sách học sinh theo học kì, năm học, môn học của admin  ---------- */
 app.get("/api/students-by-course/:namhoc/:hocky/:mahp", (req, res) => {
   const { namhoc, hocky, mahp } = req.params;
-  if (!mahp || !hocky || !namhoc) {
-    return res.status(400).json({ message: "Thiếu thông tin (mahp, hocky, namhoc)" });
+  const auth = getAuthUser(req);
+
+  if (!auth.isLoggedIn) {
+    return res.status(401).json({
+      message: "Chưa đăng nhập",
+    });
   }
-  const sp = `EXEC sp_LaySinhVienTheoHocPhan @NamHoc = ?, @HocKy = ?, @MaHP = ? `;
-  sql.query(connectionString, sp, [namhoc, hocky, mahp], (err, rows) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ message: "Lỗi máy chủ" });
+
+  if (auth.isAdmin) {
+    return res.status(403).json({
+      message: "Admin chỉ xem hệ thống, không được nhập điểm",
+    });
+  }
+
+  if (!auth.isTeacher) {
+    return res.status(403).json({
+      message: "Chỉ giảng viên mới được xem sinh viên của học phần nhập điểm",
+    });
+  }
+
+  if (!mahp || !hocky || !namhoc) {
+    return res.status(400).json({
+      message: "Thiếu thông tin năm học, học kỳ hoặc mã học phần",
+    });
+  }
+
+  const checkCourseSql = `
+    SELECT LTRIM(RTRIM(MaGV)) AS MaGV
+    FROM HOC_PHAN
+    WHERE LTRIM(RTRIM(MaHP)) = ?
+      AND LTRIM(RTRIM(NamHoc)) = ?
+      AND HocKy = ?
+  `;
+
+  sql.query(
+    connectionString,
+    checkCourseSql,
+    [mahp.trim(), namhoc.trim(), Number(hocky)],
+    (err, courseRows) => {
+      if (err) {
+        console.error("Lỗi kiểm tra quyền học phần:", err);
+        return res.status(500).json({
+          message: "Lỗi server khi kiểm tra học phần",
+        });
+      }
+
+      if (!courseRows || courseRows.length === 0) {
+        return res.status(404).json({
+          message: "Không tìm thấy học phần",
+        });
+      }
+
+      const maGvCuaHocPhan = String(courseRows[0].MaGV || "").trim();
+
+      if (maGvCuaHocPhan.toUpperCase() !== auth.relatedId.trim().toUpperCase()) {
+        return res.status(403).json({
+          message: "Bạn không được xem sinh viên của học phần không do bạn phụ trách",
+        });
+      }
+
+      const sp = `
+        EXEC sp_LaySinhVienTheoHocPhan
+          @NamHoc = ?,
+          @HocKy = ?,
+          @MaHP = ?
+      `;
+
+      sql.query(
+        connectionString,
+        sp,
+        [namhoc.trim(), Number(hocky), mahp.trim()],
+        (err2, rows) => {
+          if (err2) {
+            console.error("Lỗi lấy sinh viên theo học phần:", err2);
+            return res.status(500).json({
+              message: "Lỗi máy chủ khi lấy danh sách sinh viên",
+            });
+          }
+
+          return res.json(rows || []);
+        }
+      );
     }
-    res.json(rows);
-  });
+  );
 });
 
 /* ---------- Lấy các năm học trong cơ sở dữ liệu của admin ---------- */
@@ -2470,56 +2951,91 @@ app.get("/api/academic-years", (req, res) => {
 });
 
 
-/* ---------- Lấy danh sách học phần tkb của sinh viên theo năm học trong cơ sở dữ liệu của student ---------- */
+function getStudentIdFromSession(req) {
+  const user = req.session?.user || {};
+  return String(
+    user.relatedId ||
+    user.RELATED_ID ||
+    user.id ||
+    user.user ||
+    user.username ||
+    ""
+  ).trim();
+}
+
+/* ---------- Lấy danh sách học khóa học của sinh viên trong cơ sở dữ liệu của student ---------- */
+app.get("/api/tkb/year", (req, res) => {
+  const masv = getStudentIdFromSession(req);
+
+  if (!masv) {
+    return res.status(401).json({ message: "Chưa đăng nhập" });
+  }
+
+  const q = `
+    SELECT KhoaHoc
+    FROM SINH_VIEN
+    WHERE UPPER(LTRIM(RTRIM(MaSV))) = UPPER(?)
+  `;
+
+  sql.query(connectionString, q, [masv], (err, rows) => {
+    if (err) {
+      console.error("Lỗi lấy năm học sinh viên:", err);
+      return res.status(500).json({ message: "Lỗi máy chủ" });
+    }
+
+    res.json(rows || []);
+  });
+});
+
+/* ---------- Lấy danh sách học kỳ của sinh viên theo năm học ----------
+   LƯU Ý: route này phải đặt TRƯỚC /api/tkb/:year/:sem.
+   Nếu đặt sau, Express sẽ bắt nhầm /api/tkb/semester/2025-2026 vào route generic.
+*/
+app.get("/api/tkb/semester/:namhoc", (req, res) => {
+  const { namhoc } = req.params;
+  const masv = getStudentIdFromSession(req);
+
+  if (!masv) {
+    return res.status(401).json({ message: "Chưa đăng nhập" });
+  }
+
+  const q = `
+    EXEC sp_LayHocKySinhVien ?, ?
+  `;
+
+  sql.query(connectionString, q, [namhoc, masv], (err, rows) => {
+    if (err) {
+      console.error("Lỗi lấy học kỳ sinh viên:", err);
+      return res.status(500).json({ message: "Lỗi máy chủ" });
+    }
+
+    res.json(rows || []);
+  });
+});
+
+/* ---------- Lấy danh sách học phần tkb của sinh viên theo năm học + học kỳ ---------- */
 app.get("/api/tkb/:year/:sem", (req, res) => {
-  const year = String(req.params.year);        // CHAR(9)
-  const sem = parseInt(req.params.sem);        // INT
-  const masv = String(req.session.user?.user);
+  const year = String(req.params.year || "").trim();
+  const sem = Number(req.params.sem);
+  const masv = getStudentIdFromSession(req);
+
+  if (!masv) {
+    return res.status(401).json({ message: "Chưa đăng nhập" });
+  }
+
+  if (!year || !Number.isFinite(sem)) {
+    return res.status(400).json({ message: "Thiếu năm học hoặc học kỳ" });
+  }
 
   const query = "EXEC sp_LayThoiKhoaBieu ?, ?, ?";
 
   sql.query(connectionString, query, [year, masv, sem], (err, rows) => {
     if (err) {
-      console.error(err);
+      console.error("Lỗi lấy thời khóa biểu:", err);
       return res.status(500).json({ message: "Lỗi server" });
     }
 
-    res.json(rows);
-  });
-});
-
-
-/* ---------- Lấy danh sách học khóa học của sinh viên trong cơ sở dữ liệu của student ---------- */
-app.get("/api/tkb/year", (req, res) => {
-  const q = `
-    SELECT KhoaHoc
-    FROM SINH_VIEN WHERE MaSV = ?
-  `;
-
-  sql.query(connectionString, q, [req.session.user?.user], (err, rows) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ message: "Lỗi máy chủ" });
-    }
-    res.json(rows);
-  });
-});
-
-/* ---------- Lấy danh sách học kỳ của sinh viên theo năm học trong cơ sở dữ liệu của student ---------- */
-app.get("/api/tkb/semester/:namhoc", (req, res) => {
-  const { namhoc } = req.params;
-  const q = `
-    SELECT DISTINCT HocKy
-    FROM THOI_KHOA_BIEU
-    WHERE NamHoc = ? AND MaSV = ?
-  `;
-
-  sql.query(connectionString, q, [namhoc, req.session.user?.user], (err, rows) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ message: "Lỗi máy chủ" });
-    }
-    res.json(rows);
+    res.json(rows || []);
   });
 });
 

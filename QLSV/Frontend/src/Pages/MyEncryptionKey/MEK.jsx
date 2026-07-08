@@ -29,9 +29,9 @@ function EncryptionKey() {
     });
   };
 
-  const formatDateTime = (value) => {
+  const formatDateTime = (value, textValue) => {
+    if (textValue) return textValue;
     if (!value) return "N/A";
-
     return new Date(value).toLocaleString("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh",
       hour: "2-digit",
@@ -56,14 +56,14 @@ function EncryptionKey() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.message || "Failed to load PIN change history");
+        throw new Error(data.message || "Không tải được lịch sử đổi PIN");
       }
 
       const history = Array.isArray(data) ? data : (data.data || data.history || []);
       setLogs(history.slice(0, 5));
     } catch (error) {
       console.error("Lỗi lấy lịch sử đổi PIN:", error);
-      setLogsError(error.message || "Failed to load PIN change history");
+      setLogsError(error.message || "Không tải được lịch sử đổi PIN");
     } finally {
       setLogsLoading(false);
     }
@@ -78,15 +78,15 @@ function EncryptionKey() {
     setMsg("");
 
     if (!form.current || !form.next || !form.confirm) {
-      return setMsg("Please fill out all fields.");
+      return setMsg("Vui lòng nhập đầy đủ thông tin.");
     }
 
     if (form.next.length < 4) {
-      return setMsg("New PIN must be at least 4 digits.");
+      return setMsg("PIN mới phải có ít nhất 4 chữ số.");
     }
 
     if (form.next !== form.confirm) {
-      return setMsg("New PIN and Confirm do not match.");
+      return setMsg("PIN mới và xác nhận PIN không khớp.");
     }
 
     try {
@@ -110,12 +110,12 @@ function EncryptionKey() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMsg(data.message || "Update failed");
+        setMsg(data.message || "Cập nhật PIN thất bại");
         setLoading(false);
         return;
       }
 
-      setMsg("PIN updated successfully!");
+      setMsg(data.message || "Cập nhật PIN thành công!");
 
       setForm({
         current: "",
@@ -127,7 +127,7 @@ function EncryptionKey() {
       setLoading(false);
     } catch (error) {
       console.error(error);
-      setMsg("Server error");
+      setMsg("Lỗi server khi đổi PIN");
       setLoading(false);
     }
   };
@@ -198,7 +198,7 @@ function EncryptionKey() {
                 logs.map((log, i) => (
                   <div className="ek__logsRow" key={i}>
                     <div className="mono">
-                      {formatDateTime(log.THOI_GIAN)}
+                      {formatDateTime(log.THOI_GIAN, log.THOI_GIAN_TEXT)}
                     </div>
                     <div>{log.HANH_DONG || "Đổi PIN"}</div>
                   </div>

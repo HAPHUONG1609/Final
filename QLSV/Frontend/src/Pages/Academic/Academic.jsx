@@ -4,6 +4,88 @@ import Student from "../../assets/icon/student-bg.png";
 
 const API_BASE = "http://localhost:3000";
 
+function pick(obj, keys, defaultValue = "") {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return defaultValue;
+}
+
+function normalizeCourse(c) {
+  const maHp = String(
+    pick(c, ["MaHP", "MAHP", "maHP", "mahp", "courseId", "MaHocPhan"])
+  ).trim();
+
+  return {
+    ...c,
+
+    // Giữ cả 2 key để không bị lỗi do SQL Server trả MaHP còn JSX đọc MAHP.
+    MaHP: maHp,
+    MAHP: maHp,
+
+    TenHP: String(
+      pick(c, ["TenHP", "TENHP", "tenHP", "tenhp", "courseName", "TenHocPhan"])
+    ).trim(),
+
+    SoTinChi: Number(
+      pick(c, ["SoTinChi", "SOTINCHI", "soTinChi", "credits"], 0)
+    ),
+
+    MaLop: String(
+      pick(c, ["MaLop", "MALOP", "maLop", "classId"])
+    ).trim(),
+
+    LichHoc: String(
+      pick(c, ["LichHoc", "LICHHOC", "lichHoc", "schedule"])
+    ).trim(),
+
+    GK: c.GK ?? c.gk ?? null,
+    CK: c.CK ?? c.ck ?? null,
+    DiemTrungBinh:
+      c.DiemTrungBinh ??
+      c.diemTrungBinh ??
+      c.average ??
+      c.DiemThat ??
+      c.Diem ??
+      null,
+    error: c.error || "",
+  };
+}
+
+function getFriendlyDecryptError(rawMessage, status) {
+  const message = String(rawMessage || "").trim();
+  const lower = message.toLowerCase();
+
+  // Backend có thể trả thông báo kỹ thuật dài khi PIN sai hoặc shared secret không khớp.
+  // Frontend chỉ hiển thị thông báo ngắn gọn cho sinh viên.
+  const isWrongPinMessage =
+    lower.includes("pin sai") ||
+    lower.includes("public_key") ||
+    lower.includes("public key") ||
+    lower.includes("flow cũ") ||
+    lower.includes("flow cu") ||
+    lower.includes("giải mã thất bại") ||
+    lower.includes("giai ma that bai") ||
+    lower.includes("decrypt") ||
+    lower.includes("sharedsecret") ||
+    lower.includes("shared secret") ||
+    status === 401 ||
+    status === 403;
+
+  if (isWrongPinMessage) {
+    return "Nhập PIN sai";
+  }
+
+  if (status === 404 || lower.includes("không tìm thấy điểm crt")) {
+    return "Chưa có điểm cho môn học này";
+  }
+
+  return message || "Không giải mã được điểm";
+}
+
 function Academic() {
   const [courses, setCourses] = useState([]);
   const [years, setYears] = useState([]);
@@ -51,19 +133,27 @@ function Academic() {
 
         const data = await res.json();
 
-        if (!dead && data?.length) {
-          const [start, end] = data[0].KhoaHoc.split("-").map(Number);
-          const listYears = [];
+        if (!dead) {
+          let listYears = [];
 
-          for (let y = start; y < end; y++) {
-            listYears.push(`${y}-${y + 1}`);
+          // Backend chuẩn mới trả [{ NamHoc: "2023-2024" }, ...]
+          if (Array.isArray(data) && data.some((x) => x?.NamHoc || x?.NAMHOC)) {
+            listYears = data
+              .map((x) => String(x.NamHoc || x.NAMHOC || "").trim())
+              .filter(Boolean);
           }
 
-          setYears(listYears);
-
-          if (!year && listYears.length > 0) {
-            setYear(listYears[0]);
+          // Fallback cho backend cũ trả KhoaHoc, ví dụ 2022-2026.
+          if (!listYears.length && Array.isArray(data) && data[0]?.KhoaHoc) {
+            const [start, end] = String(data[0].KhoaHoc).split("-").map(Number);
+            if (Number.isFinite(start) && Number.isFinite(end)) {
+              for (let y = start; y < end; y++) {
+                listYears.push(`${y}-${y + 1}`);
+              }
+            }
           }
+
+          setYears([...new Set(listYears)].sort());
         }
       } catch (err) {
         if (!dead) setErrorYear(err.message);
@@ -78,7 +168,13 @@ function Academic() {
   }, []);
 
   useEffect(() => {
-    if (!year) return;
+    if (!year) {
+      setSemesters([]);
+      setSem("");
+      setCourses([]);
+      setDecrypted(false);
+      return;
+    }
 
     let dead = false;
 
@@ -88,21 +184,25 @@ function Academic() {
         setErrorSemester("");
         setSemesters([]);
         setSem("");
+        setCourses([]);
+        setDecrypted(false);
 
-        const res = await fetch(`${API_BASE}/api/semesters/${year}`, {
+        const res = await fetch(`${API_BASE}/api/tkb/semester/${year}`, {
           credentials: "include",
         });
 
         if (!res.ok) throw new Error("Failed to load semesters");
 
         const data = await res.json();
+        const cleanSemesters = (data || [])
+          .map((item) => ({
+            HocKy: Number(item.HocKy ?? item.HOCKY ?? item.hocKy ?? item.semester),
+          }))
+          .filter((item) => Number.isFinite(item.HocKy))
+          .sort((a, b) => a.HocKy - b.HocKy);
 
-        if (!dead && data?.length) {
-          setSemesters(data);
-
-          if (!sem) {
-            setSem(String(data[0].HocKy));
-          }
+        if (!dead) {
+          setSemesters(cleanSemesters);
         }
       } catch (err) {
         if (!dead) setErrorSemester(err.message);
@@ -117,7 +217,11 @@ function Academic() {
   }, [year]);
 
   useEffect(() => {
-    if (!year || !sem) return;
+    if (!year || !sem) {
+      setCourses([]);
+      setDecrypted(false);
+      return;
+    }
 
     let dead = false;
 
@@ -136,19 +240,7 @@ function Academic() {
         const data = await res.json();
 
         if (!dead) {
-          const clean = (data || []).map((c) => ({
-            ...c,
-            MAHP: String(c.MAHP || "").trim(),
-            TenHP: String(c.TenHP || "").trim(),
-            SoTinChi: Number(c.SoTinChi || 0),
-            MaLop: String(c.MaLop || "").trim(),
-            LichHoc: String(c.LichHoc || "").trim(),
-            GK: null,
-            CK: null,
-            DiemTrungBinh: null,
-            error: "",
-          }));
-
+          const clean = (data || []).map(normalizeCourse);
           setCourses(clean);
         }
       } catch (err) {
@@ -167,7 +259,7 @@ function Academic() {
     const search = q.trim().toLowerCase();
 
     return courses.filter((c) => {
-      const maHp = String(c.MAHP || "").toLowerCase();
+      const maHp = String(c.MAHP || c.MaHP || "").toLowerCase();
       const tenHp = String(c.TenHP || "").toLowerCase();
       const maLop = String(c.MaLop || "").toLowerCase();
       const lichHoc = String(c.LichHoc || "").toLowerCase();
@@ -197,8 +289,6 @@ function Academic() {
     let totalCredits = 0;
     let countedCourses = 0;
 
-    // Tính GPA theo toàn bộ học phần của năm học + học kỳ đang chọn.
-    // Không dùng filtered, vì filtered chỉ là danh sách đang tìm kiếm trên giao diện.
     courses.forEach((c) => {
       if (c.error) return;
 
@@ -244,6 +334,11 @@ function Academic() {
       return;
     }
 
+    if (!year || !sem) {
+      alert("Vui lòng chọn năm học và học kỳ trước khi giải mã điểm");
+      return;
+    }
+
     if (!courses || courses.length === 0) {
       alert("Không có học phần nào để giải mã");
       return;
@@ -252,7 +347,7 @@ function Academic() {
     try {
       const decryptedCourses = await Promise.all(
         courses.map(async (course) => {
-          const courseId = String(course.MAHP || "").trim();
+          const courseId = String(course.MAHP || course.MaHP || "").trim();
 
           if (!courseId) {
             return {
@@ -273,6 +368,8 @@ function Academic() {
             body: JSON.stringify({
               pin: pinClean,
               courseId,
+              academicYear: year,
+              semester: sem,
             }),
           });
 
@@ -287,10 +384,7 @@ function Academic() {
 
           if (!res.ok) {
             const rawMessage = data?.message || text || "Không giải mã được điểm";
-            const friendlyMessage =
-              res.status === 404 || rawMessage.includes("Không tìm thấy điểm CRT")
-                ? "Chưa có điểm cho môn học này"
-                : rawMessage;
+            const friendlyMessage = getFriendlyDecryptError(rawMessage, res.status);
 
             return {
               ...course,
@@ -301,7 +395,7 @@ function Academic() {
             };
           }
 
-          return {
+          return normalizeCourse({
             ...course,
             GK:
               data?.gk ??
@@ -327,7 +421,7 @@ function Academic() {
               null,
 
             error: "",
-          };
+          });
         })
       );
 
@@ -415,7 +509,7 @@ function Academic() {
               <option value="">Chọn học kỳ</option>
               {semesters.map((s) => (
                 <option key={s.HocKy} value={s.HocKy}>
-                  {s.HocKy}
+                  Học kỳ {s.HocKy}
                 </option>
               ))}
             </select>
@@ -461,13 +555,13 @@ function Academic() {
                   </tr>
                 ) : filtered.length ? (
                   filtered.map((c, index) => (
-                    <tr key={`${c.MAHP}-${index}`}>
-                      <td className="mono">{c.MAHP}</td>
-                      <td>{c.TenHP}</td>
-                      <td>{c.SoTinChi}</td>
+                    <tr key={`${c.MAHP || c.MaHP || index}-${index}`}>
+                      <td className="mono">{c.MAHP || c.MaHP || "-"}</td>
+                      <td>{c.TenHP || "-"}</td>
+                      <td>{c.SoTinChi || "-"}</td>
 
-                      {!decrypted && <td>{c.MaLop}</td>}
-                      {!decrypted && <td>{c.LichHoc}</td>}
+                      {!decrypted && <td>{c.MaLop || "-"}</td>}
+                      {!decrypted && <td>{c.LichHoc || "-"}</td>}
 
                       {decrypted && (
                         <>
@@ -487,7 +581,9 @@ function Academic() {
                 ) : (
                   <tr>
                     <td colSpan={decrypted ? 6 : 5} className="empty">
-                      No records found.
+                      {!year || !sem
+                        ? "Vui lòng chọn năm học và học kỳ để xem học phần."
+                        : "Sinh viên chưa có học phần đăng ký trong năm học và học kỳ này."}
                     </td>
                   </tr>
                 )}
