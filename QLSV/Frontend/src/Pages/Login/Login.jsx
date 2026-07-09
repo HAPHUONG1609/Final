@@ -142,7 +142,6 @@ function Login() {
               />
               <span>Remember me</span>
             </label>
-            <Link className="link" to="#">Forgot password?</Link>
           </div>
 
           <button className="btn" type="submit" disabled={loading}>
@@ -150,10 +149,6 @@ function Login() {
           </button>
         </form>
 
-        <div className="login__footer">
-          <span>Don't have an account?</span>
-          <Link className="link" to="/signup">Sign Up</Link>
-        </div>
       </div>
     </div>
   );
