@@ -21,6 +21,7 @@ import AdminDashboard from "./Pages/Admin/AdminDashboard.jsx";
 import ManagementKey from "./Pages/Admin/ManagementKey.jsx";
 import ManageStudentInformation from "./Pages/Admin/ManageStudentInformation.jsx";
 import ManageGrades from "./Pages/Admin/ManageGrades.jsx";
+import AdminEncryptionKey from "./Pages/Admin/EncryptionKey.jsx";
 
 export default function App() {
   return (
@@ -49,7 +50,7 @@ export default function App() {
             <Route path="management-key" element={<ManagementKey />} />
             <Route path="students" element={<ManageStudentInformation />} />
             <Route path="grades" element={<ManageGrades />} />
-            <Route path="logs" element={<AdminDashboard />} />
+            <Route path="logs" element={<AdminEncryptionKey />} />
           </Route>
 
           {/* ===== 404 ===== */}

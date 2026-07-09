@@ -896,7 +896,7 @@ function ManageGrades() {
               type="password"
               value={pin}
               onChange={(event) => setPin(event.target.value)}
-              placeholder="Nhập PIN giảng viên"
+              placeholder="Nhập mã PIN dạng số "
               autoComplete="off"
               style={{
                 ...inputStyle,
@@ -904,9 +904,7 @@ function ManageGrades() {
                 border: pin.trim() ? "2px solid #22c55e" : "2px solid #f59e0b",
               }}
             />
-            <span style={{ color: "#94a3b8", fontSize: "11px" }}>
-              PIN này được gửi lên backend để Java tính sharedSecret và range số nguyên tố.
-            </span>
+            
           </div>
         </div>
 
