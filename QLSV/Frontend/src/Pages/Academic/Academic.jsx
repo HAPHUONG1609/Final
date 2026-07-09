@@ -482,21 +482,7 @@ function Academic() {
           </div>
 
           <div className="filters">
-            <select
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              style={{
-                backgroundColor: "#fff",
-                color: "#334155",
-                borderRadius: "8px",
-                padding: "10px 12px",
-                height: "40px",
-                fontSize: "13px",
-                fontWeight: "500",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
+            <select className="filters__select" value={year} onChange={(e) => setYear(e.target.value)}>
               <option value="">Chọn năm học</option>
               {years.map((y) => (
                 <option key={y} value={y}>
@@ -505,7 +491,7 @@ function Academic() {
               ))}
             </select>
 
-            <select value={sem} onChange={(e) => setSem(e.target.value)}>
+            <select className="filters__select" value={sem} onChange={(e) => setSem(e.target.value)}>
               <option value="">Chọn học kỳ</option>
               {semesters.map((s) => (
                 <option key={s.HocKy} value={s.HocKy}>

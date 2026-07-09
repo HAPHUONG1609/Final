@@ -3,6 +3,7 @@ import "./Dashboard.css";
 import Class from "../../assets/icon/class.png";
 import Key from "../../assets/icon/key.png";
 import Id from "../../assets/icon/id.png";
+import User from "../../assets/icon/user.png";
 import Scur from "../../assets/icon/scurity.png";
 
 function Dashboard() {
@@ -86,8 +87,8 @@ function Dashboard() {
   return (
     <div className="dash">
       <section className="dash__greet">
-        <h1 className="dash__title">
-          Hello, {loading ? "…" : student.HoTen || "—"} <span className="wave">👋</span>
+        <h1 className="dash__title dash__student-name">
+          {loading ? "…" : student.HoTen || "—"} <span className="wave"></span>
         </h1>
 
         <p className="dash__subtitle">
@@ -105,8 +106,9 @@ function Dashboard() {
       {/* CHỈ GIỮ 4 Ô ĐÚNG THEO TASK */}
       <section className="dash__grid4">
         <div className="card info">
+          <img src={User} alt="" className="info_icon" />
           <div className="info__title">Faculty</div>
-          <div className="info__value">{loading ? "…" : student.NganhDT || "—"}</div>
+          <div className="info__value info__faculty-value">{loading ? "…" : student.NganhDT || "—"}</div>
         </div>
 
         <div className="card info">

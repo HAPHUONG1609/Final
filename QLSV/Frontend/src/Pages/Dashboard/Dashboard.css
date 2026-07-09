@@ -28,6 +28,12 @@
   font-weight: 800;
   color: var(--text);
 }
+
+.dash__student-name {
+  font-family: "Montserrat", "Segoe UI", Tahoma, Arial, sans-serif;
+  letter-spacing: -0.02em;
+}
+
 .wave { 
   display: inline-block; }
 
@@ -91,8 +97,16 @@
   font-size: 16px;
   font-weight: 700;
 }
+
+.info__faculty-value {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
 .info__value.id { 
-    font-family: ui-monospace, Menlo, Consolas, monospace; 
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    font-weight: 800;
 }
 
 /* status + button */
