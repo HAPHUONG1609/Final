@@ -579,24 +579,7 @@ function Academic() {
         </div>
       </section>
 
-      {decrypted && (
-        <section className="summary card">
-          <div className="summary__title">Academic Summary</div>
 
-          <div className="summary__grid">
-            <div className="summary__meta">
-              <div className="meta__label">Semester GPA</div>
-              <div className="meta__value">{semesterSummary.gpa ?? "—"}</div>
-            </div>
-
-            <div className="summary__note">
-              Tính theo {semesterSummary.countedCourses} học phần / {semesterSummary.totalCredits} tín chỉ trong học kỳ {sem}, năm học {year}.
-              <br />
-              Last Updated: {new Date().toLocaleDateString("vi-VN")}
-            </div>
-          </div>
-        </section>
-      )}
     </div>
   );
 }

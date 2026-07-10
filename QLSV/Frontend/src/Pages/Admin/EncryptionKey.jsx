@@ -81,6 +81,10 @@ function AdminEncryptionKey() {
       return setMsg("Vui lòng nhập đầy đủ thông tin.");
     }
 
+    if (!/^\d+$/.test(form.current) || !/^\d+$/.test(form.next) || !/^\d+$/.test(form.confirm)) {
+      return setMsg("PIN chỉ được chứa chữ số.");
+    }
+
     if (form.next.length < 4) {
       return setMsg("PIN mới phải có ít nhất 4 chữ số.");
     }
@@ -135,8 +139,8 @@ function AdminEncryptionKey() {
         <section className="card admin-ek__status">
           <div className="admin-ek__statusHeader">
             <div>
-              <div className="admin-ek__eyebrow">Lecturer Security</div>
-              <div className="admin-ek__title admin-ek__title--compact">Lecturer PIN Status</div>
+              <div className="admin-ek__eyebrow">Bảo mật giảng viên</div>
+              <div className="admin-ek__title admin-ek__title--compact">Trạng thái mã PIN</div>
             </div>
             <span className="badge badge--ok">{keyInfo.status}</span>
           </div>
@@ -158,7 +162,7 @@ function AdminEncryptionKey() {
         </section>
 
         <section className="card admin-ek__logs">
-          <div className="admin-ek__title">Recent Lecturer PIN Update Logs</div>
+          <div className="admin-ek__title">Lịch sử đổi mã PIN gần đây</div>
 
           <div className="admin-ek__logsTable">
             <div className="admin-ek__logsHead">
@@ -169,7 +173,7 @@ function AdminEncryptionKey() {
             <div className="admin-ek__logsBody">
               {logsLoading ? (
                 <div className="admin-ek__logsRow">
-                  <div>Loading...</div>
+                  <div>Đang tải...</div>
                   <div />
                 </div>
               ) : logsError ? (
@@ -195,46 +199,46 @@ function AdminEncryptionKey() {
         </section>
 
         <section className="card admin-ek__change">
-          <div className="admin-ek__title">Change Lecturer PIN</div>
+          <div className="admin-ek__title">Đổi mã PIN giảng viên</div>
 
           <form className="admin-ek__form" onSubmit={submit}>
             <label className="admin-ek__field">
-              <span>Current Lecturer PIN</span>
+              <span>PIN hiện tại</span>
               <input
                 type="password"
                 name="current"
                 value={form.current}
                 onChange={onChange}
-                placeholder="Current Lecturer PIN"
+                placeholder="PIN hiện tại"
               />
             </label>
 
             <label className="admin-ek__field">
-              <span>New Lecturer PIN</span>
+              <span>PIN mới</span>
               <input
                 type="password"
                 name="next"
                 value={form.next}
                 onChange={onChange}
-                placeholder="New Lecturer PIN"
+                placeholder="PIN mới"
               />
             </label>
 
             <label className="admin-ek__field">
-              <span>Confirm Lecturer PIN</span>
+              <span>Xác nhận PIN mới</span>
               <input
                 type="password"
                 name="confirm"
                 value={form.confirm}
                 onChange={onChange}
-                placeholder="Confirm Lecturer PIN"
+                placeholder="Nhập lại PIN mới"
               />
             </label>
 
             {msg && <div className="admin-ek__msg">{msg}</div>}
 
             <button className="btn btn--primary" type="submit" disabled={loading}>
-              {loading ? "Updating..." : "Change Lecturer PIN"}
+              {loading ? "Đang đồng bộ dữ liệu CRT..." : "Đổi PIN của tôi"}
             </button>
           </form>
         </section>

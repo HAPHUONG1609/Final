@@ -124,6 +124,420 @@ function queryAsync(query, params = []) {
   });
 }
 
+function openConnectionAsync() {
+  return new Promise((resolve, reject) => {
+    sql.open(connectionString, (err, conn) => {
+      if (err) return reject(err);
+      resolve(conn);
+    });
+  });
+}
+
+function connectionQueryAsync(conn, query, params = []) {
+  return new Promise((resolve, reject) => {
+    conn.query(query, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows || []);
+    });
+  });
+}
+
+function beginTransactionAsync(conn) {
+  return new Promise((resolve, reject) => {
+    conn.beginTransaction((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+function commitTransactionAsync(conn) {
+  return new Promise((resolve, reject) => {
+    conn.commit((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+function rollbackTransactionAsync(conn) {
+  return new Promise((resolve) => {
+    conn.rollback(() => resolve());
+  });
+}
+
+function closeConnectionAsync(conn) {
+  return new Promise((resolve) => {
+    if (!conn) return resolve();
+    conn.close(() => resolve());
+  });
+}
+
+const LEGACY_DEMO_PUBLIC_KEY =
+  "98765432109876543210987654321098765432109876543210";
+const DEFAULT_PIN_HASH = crypto
+  .createHash("sha256")
+  .update("123456", "utf8")
+  .digest("hex")
+  .toUpperCase();
+const DEFAULT_DH_PUBLIC_KEY =
+  "7338258770975606474162313878226098913975615684631750472498798141911961283234599662935270253780617112317563115933902886953747065787705913317874849905022296201578730628658806570113820501384983033726520414298623321574516964058759551888667248465779789530506401409157883955423100033841651056911717325505154791081654204754587068273502247839893713584429709459601077782206385708521627983684779272812003130922798782513714244710163424529943227432727113694615619155576677461160091724745363431960954447646504992836890995044082573963638114280827453772349188215768902507186415285905018324944692839443596039575573283897988772455406";
+
+function isValidGradePlaintext(values) {
+  return (
+    Array.isArray(values) &&
+    values.length === 3 &&
+    values.every((value) => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100)
+  );
+}
+
+function normalizeRange(startIndex, endIndex) {
+  const start = Number(startIndex);
+  const end = Number(endIndex);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end !== start + 2 || start < 0) {
+    return null;
+  }
+  return { startIndex: start, endIndex: end };
+}
+
+async function tryDecryptGradeWithRanges({ mssv, C, ranges }) {
+  const tried = new Set();
+  let lastError = null;
+
+  for (const candidate of ranges) {
+    const range = normalizeRange(candidate?.startIndex, candidate?.endIndex);
+    if (!range) continue;
+
+    const key = `${range.startIndex}:${range.endIndex}`;
+    if (tried.has(key)) continue;
+    tried.add(key);
+
+    try {
+      const primes = await getPrimesByRange(range.startIndex, range.endIndex);
+      const plaintext = await decryptGradeCrt({ mssv, C, primes });
+      if (isValidGradePlaintext(plaintext)) {
+        return { plaintext, range, primes };
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Không tìm được khoảng số nguyên tố hợp lệ để giải mã dữ liệu CRT");
+}
+
+async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, newPin }) {
+  const gradeRows = await queryAsync(
+    `
+      SELECT
+        LTRIM(RTRIM(d.MASV)) AS MASV,
+        LTRIM(RTRIM(d.MAHP)) AS MAHP,
+        LTRIM(RTRIM(d.MAGV)) AS MAGV,
+        d.C,
+        d.START_INDEX,
+        d.END_INDEX,
+        d.NamHoc,
+        d.HocKy,
+        d.MAKHOA_CRT,
+        d.MALOP_CRT,
+        d.SV_PUBLIC_KEY_CRT,
+        ISNULL(d.KEY_VERSION, 1) AS KEY_VERSION,
+        LTRIM(RTRIM(COALESCE(NULLIF(d.MAKHOA_CRT, ''), NULLIF(sv.Khoa, ''), NULLIF(hp.MaKhoa, ''), NULLIF(l.MAKHOA, ''), 'CNTT'))) AS MaKhoa,
+        LTRIM(RTRIM(COALESCE(NULLIF(d.MALOP_CRT, ''), NULLIF(sv.MaLop, ''), NULLIF(hp.MaLop, '')))) AS MaLop,
+        sv.PUBLIC_KEY AS CurrentSvPublicKey,
+        p.PIN_HASH AS StudentPinHash
+      FROM dbo.DIEM_CRT d
+      INNER JOIN dbo.SINH_VIEN sv
+        ON UPPER(LTRIM(RTRIM(sv.MaSV))) = UPPER(LTRIM(RTRIM(d.MASV)))
+      LEFT JOIN dbo.PING p
+        ON UPPER(LTRIM(RTRIM(p.MASV))) = UPPER(LTRIM(RTRIM(d.MASV)))
+      OUTER APPLY (
+        SELECT TOP 1 hp0.MaKhoa, hp0.MaLop
+        FROM dbo.HOC_PHAN hp0
+        WHERE UPPER(LTRIM(RTRIM(hp0.MAHP))) = UPPER(LTRIM(RTRIM(d.MAHP)))
+        ORDER BY
+          CASE WHEN d.NamHoc IS NOT NULL AND LTRIM(RTRIM(hp0.NamHoc)) = LTRIM(RTRIM(d.NamHoc)) THEN 0 ELSE 1 END,
+          CASE WHEN d.HocKy IS NOT NULL AND hp0.HocKy = d.HocKy THEN 0 ELSE 1 END
+      ) hp
+      LEFT JOIN dbo.LOP l
+        ON LTRIM(RTRIM(l.MaLop)) = LTRIM(RTRIM(sv.MaLop))
+      WHERE UPPER(LTRIM(RTRIM(d.MAGV))) = UPPER(?)
+      ORDER BY d.MASV, d.MAHP
+    `,
+    [maGv]
+  );
+
+  const updates = [];
+  const studentPublicKeyRepairs = new Map();
+
+  for (const row of gradeRows) {
+    const mssv = String(row.MASV || "").trim();
+    const maHp = String(row.MAHP || "").trim();
+    const oldC = String(row.C || "").trim();
+    const maKhoa = String(row.MaKhoa || "").trim();
+    const maLop = String(row.MaLop || "").trim();
+
+    if (!mssv || !maHp || !oldC || !maKhoa || !maLop) {
+      throw new Error(`Dữ liệu CRT thiếu thông tin tại ${mssv || "?"}-${maHp || "?"}`);
+    }
+
+    const currentSvPublicKey = String(row.CurrentSvPublicKey || "").trim();
+    const encryptedSvPublicKey = String(row.SV_PUBLIC_KEY_CRT || "").trim();
+    const studentPinHash = String(row.StudentPinHash || "").trim().toUpperCase();
+
+    let newSvPublicKey = currentSvPublicKey;
+    if (studentPinHash === DEFAULT_PIN_HASH && currentSvPublicKey === LEGACY_DEMO_PUBLIC_KEY) {
+      newSvPublicKey = DEFAULT_DH_PUBLIC_KEY;
+      studentPublicKeyRepairs.set(mssv.toUpperCase(), newSvPublicKey);
+    }
+
+    if (!/^\d+$/.test(newSvPublicKey)) {
+      throw new Error(`Sinh viên ${mssv} chưa có PUBLIC_KEY hợp lệ`);
+    }
+
+    const oldRanges = [];
+    const storedRange = normalizeRange(row.START_INDEX, row.END_INDEX);
+    if (storedRange) oldRanges.push(storedRange);
+
+    const oldPublicKeyCandidates = [
+      encryptedSvPublicKey,
+      currentSvPublicKey,
+      LEGACY_DEMO_PUBLIC_KEY,
+    ].filter((value, index, array) => /^\d+$/.test(value) && array.indexOf(value) === index);
+
+    for (const publicKey of oldPublicKeyCandidates) {
+      try {
+        oldRanges.push(
+          await calculatePrimeRange({
+            maKhoa,
+            maLop,
+            mssv,
+            maHp,
+            publicKey,
+            pin: currentPin,
+          })
+        );
+      } catch (error) {
+        // Thử candidate kế tiếp. Lỗi cuối cùng sẽ được báo khi không candidate nào giải mã được.
+      }
+    }
+
+    const decrypted = await tryDecryptGradeWithRanges({
+      mssv,
+      C: oldC,
+      ranges: oldRanges,
+    });
+
+    const newRange = await calculatePrimeRange({
+      maKhoa,
+      maLop,
+      mssv,
+      maHp,
+      publicKey: newSvPublicKey,
+      pin: newPin,
+    });
+    const newPrimes = await getPrimesByRange(newRange.startIndex, newRange.endIndex);
+    const newC = await encryptGradeCrt({
+      mssv,
+      plaintext: decrypted.plaintext,
+      primes: newPrimes,
+    });
+
+    const verification = await decryptGradeCrt({ mssv, C: newC, primes: newPrimes });
+    if (JSON.stringify(verification) !== JSON.stringify(decrypted.plaintext)) {
+      throw new Error(`Kiểm tra mã hóa lại thất bại tại ${mssv}-${maHp}`);
+    }
+
+    updates.push({
+      mssv,
+      maHp,
+      maGv,
+      oldC,
+      newC,
+      maKhoa,
+      maLop,
+      newSvPublicKey,
+      newRange,
+      nextKeyVersion: Number(row.KEY_VERSION || 1) + 1,
+    });
+  }
+
+  return { updates, studentPublicKeyRepairs };
+}
+
+async function applyTeacherPinChangeTransaction({
+  maGv,
+  username,
+  currentPin,
+  newPin,
+  newTeacherPublicKey,
+  prepared,
+}) {
+  let conn = null;
+  let transactionStarted = false;
+
+  try {
+    conn = await openConnectionAsync();
+    await beginTransactionAsync(conn);
+    transactionStarted = true;
+
+    const verifyRows = await connectionQueryAsync(
+      conn,
+      `
+        SELECT CASE WHEN PIN_HASH = CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)), 2)
+                    THEN 1 ELSE 0 END AS IsValid
+        FROM dbo.GIANG_VIEN WITH (UPDLOCK, HOLDLOCK)
+        WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
+      `,
+      [currentPin, maGv]
+    );
+
+    if (Number(verifyRows[0]?.IsValid || 0) !== 1) {
+      const error = new Error("PIN hiện tại không đúng hoặc vừa được thay đổi ở phiên khác");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    for (const [mssv, publicKey] of prepared.studentPublicKeyRepairs.entries()) {
+      await connectionQueryAsync(
+        conn,
+        `UPDATE dbo.SINH_VIEN SET PUBLIC_KEY = ? WHERE UPPER(LTRIM(RTRIM(MaSV))) = UPPER(?)`,
+        [publicKey, mssv]
+      );
+    }
+
+    for (const item of prepared.updates) {
+      /*
+       * Khóa đúng bản ghi trong transaction trước khi cập nhật.
+       * Không dùng UPDATE + SELECT @@ROWCOUNT vì msnodesqlv8 có thể trả nhiều
+       * result-set và làm backend hiểu nhầm AffectedRows = 0 dù UPDATE thành công.
+       */
+      const lockedRows = await connectionQueryAsync(
+        conn,
+        `
+          SELECT
+              C,
+              START_INDEX,
+              END_INDEX,
+              ISNULL(KEY_VERSION, 1) AS KEY_VERSION
+          FROM dbo.DIEM_CRT WITH (UPDLOCK, HOLDLOCK)
+          WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
+            AND UPPER(LTRIM(RTRIM(MAHP))) = UPPER(?)
+            AND UPPER(LTRIM(RTRIM(MAGV))) = UPPER(?)
+        `,
+        [item.mssv, item.maHp, maGv]
+      );
+
+      if (!Array.isArray(lockedRows) || lockedRows.length !== 1) {
+        throw new Error(
+          `Không tìm thấy duy nhất điểm ${item.mssv}-${item.maHp} để đổi PIN`
+        );
+      }
+
+      const currentC = String(lockedRows[0]?.C ?? "").trim();
+      const expectedOldC = String(item.oldC ?? "").trim();
+
+      // Sau khi đã UPDLOCK + HOLDLOCK, không phiên khác nào có thể sửa dòng này
+      // cho đến khi transaction COMMIT/ROLLBACK.
+      if (currentC !== expectedOldC) {
+        throw new Error(
+          `Điểm ${item.mssv}-${item.maHp} thực sự đã được cập nhật bởi phiên khác`
+        );
+      }
+
+      await connectionQueryAsync(
+        conn,
+        `
+          UPDATE dbo.DIEM_CRT
+          SET C = ?,
+              START_INDEX = ?,
+              END_INDEX = ?,
+              MAKHOA_CRT = ?,
+              MALOP_CRT = ?,
+              SV_PUBLIC_KEY_CRT = ?,
+              ALGORITHM_VERSION = 'CRT_DH_V2',
+              KEY_VERSION = ?,
+              UPDATED_AT = GETDATE()
+          WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
+            AND UPPER(LTRIM(RTRIM(MAHP))) = UPPER(?)
+            AND UPPER(LTRIM(RTRIM(MAGV))) = UPPER(?)
+        `,
+        [
+          item.newC,
+          item.newRange.startIndex,
+          item.newRange.endIndex,
+          item.maKhoa,
+          item.maLop,
+          item.newSvPublicKey,
+          item.nextKeyVersion,
+          item.mssv,
+          item.maHp,
+          maGv,
+        ]
+      );
+
+      // Đọc lại ngay trong cùng transaction để xác nhận dữ liệu đã được ghi đúng.
+      // Cách này ổn định với msnodesqlv8 hơn việc dựa vào @@ROWCOUNT.
+      const verifiedRows = await connectionQueryAsync(
+        conn,
+        `
+          SELECT
+              C,
+              START_INDEX,
+              END_INDEX,
+              ISNULL(KEY_VERSION, 1) AS KEY_VERSION,
+              ALGORITHM_VERSION
+          FROM dbo.DIEM_CRT WITH (UPDLOCK, HOLDLOCK)
+          WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
+            AND UPPER(LTRIM(RTRIM(MAHP))) = UPPER(?)
+            AND UPPER(LTRIM(RTRIM(MAGV))) = UPPER(?)
+        `,
+        [item.mssv, item.maHp, maGv]
+      );
+
+      const verified = verifiedRows?.[0];
+      const savedC = String(verified?.C ?? "").trim();
+
+      if (
+        verifiedRows.length !== 1 ||
+        savedC !== String(item.newC ?? "").trim() ||
+        Number(verified?.START_INDEX) !== Number(item.newRange.startIndex) ||
+        Number(verified?.END_INDEX) !== Number(item.newRange.endIndex) ||
+        Number(verified?.KEY_VERSION) !== Number(item.nextKeyVersion) ||
+        String(verified?.ALGORITHM_VERSION || "").trim() !== "CRT_DH_V2"
+      ) {
+        throw new Error(
+          `Không thể xác nhận dữ liệu CRT mới của ${item.mssv}-${item.maHp}`
+        );
+      }
+    }
+
+    await connectionQueryAsync(
+      conn,
+      `
+        UPDATE dbo.GIANG_VIEN
+        SET PIN_HASH = CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)), 2),
+            PUBLIC_KEY = ?,
+            KEY_VERSION = ISNULL(KEY_VERSION, 1) + 1,
+            PIN_CHANGED_AT = GETDATE()
+        WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
+      `,
+      [newPin, newTeacherPublicKey, maGv]
+    );
+
+    await connectionQueryAsync(
+      conn,
+      `
+        INSERT INTO dbo.LICH_SU_DOI_PIN (USERNAME, MASV, MAGV, THOI_GIAN, HANH_DONG)
+        VALUES (?, NULL, ?, DATEADD(HOUR, 7, SYSUTCDATETIME()), N'Giảng viên tự đổi PIN và mã hóa lại điểm CRT')
+      `,
+      [username, maGv]
+    );
+
+    await commitTransactionAsync(conn);
+    transactionStarted = false;
+  } catch (error) {
+    if (conn && transactionStarted) await rollbackTransactionAsync(conn);
+    throw error;
+  } finally {
+    await closeConnectionAsync(conn);
+  }
+}
+
 async function postJson(url, payload) {
   const response = await fetch(url, {
     method: "POST",
@@ -267,7 +681,11 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
         LTRIM(RTRIM(MASV)) AS MASV,
         LTRIM(RTRIM(MAHP)) AS MAHP,
         LTRIM(RTRIM(MAGV)) AS MAGV,
-        C
+        C,
+        START_INDEX,
+        END_INDEX,
+        MAKHOA_CRT,
+        MALOP_CRT
       FROM DIEM_CRT
       WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
     `,
@@ -306,23 +724,33 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
 
     // Bước 1: giải mã C hiện tại bằng PIN cũ của sinh viên.
     // Đây là đúng flow giải mã cũ: PUBLIC_KEY giảng viên + PIN sinh viên.
-    const oldRange = await calculatePrimeRange({
-      maKhoa: sv.MaKhoa,
-      maLop: sv.MaLop,
+    const contextMaKhoa = String(row.MAKHOA_CRT || sv.MaKhoa || "").trim();
+    const contextMaLop = String(row.MALOP_CRT || sv.MaLop || "").trim();
+    const derivedOldRange = await calculatePrimeRange({
+      maKhoa: contextMaKhoa,
+      maLop: contextMaLop,
       mssv,
       maHp,
       publicKey: gvPublicKey,
       pin: currentPin,
     });
-    const oldPrimes = await getPrimesByRange(oldRange.startIndex, oldRange.endIndex);
-    const plaintext = await decryptGradeCrt({ mssv, C: oldC, primes: oldPrimes });
+    const decryptedOld = await tryDecryptGradeWithRanges({
+      mssv,
+      C: oldC,
+      ranges: [
+        normalizeRange(row.START_INDEX, row.END_INDEX),
+        derivedOldRange,
+      ],
+    });
+    const plaintext = decryptedOld.plaintext;
+    const oldRange = decryptedOld.range;
 
     // Bước 2: mã hóa lại C theo PIN mới.
     // Dùng PUBLIC_KEY giảng viên + PIN mới để sinh cùng sharedSecret mà giảng viên sẽ sinh
     // ở các lần nhập điểm sau bằng PUBLIC_KEY sinh viên mới + PIN giảng viên.
     const newRange = await calculatePrimeRange({
-      maKhoa: sv.MaKhoa,
-      maLop: sv.MaLop,
+      maKhoa: contextMaKhoa,
+      maLop: contextMaLop,
       mssv,
       maHp,
       publicKey: gvPublicKey,
@@ -931,100 +1359,111 @@ app.put("/student/update", (req, res) => {
 app.post("/api/set-pin", async (req, res) => {
   try {
     const auth = getAuthUser(req);
-
     if (!auth.isLoggedIn) {
       return res.status(401).json({ message: "Chưa đăng nhập" });
     }
-
-    if (!auth.isStudent) {
-      return res.status(403).json({
-        message: "Chỉ sinh viên mới được đổi PIN tại trang My encryption key",
-      });
+    if (auth.isAdmin) {
+      return res.status(403).json({ message: "Admin không được đổi PIN thay người dùng" });
     }
 
-    const username = req.session.user?.username || req.session.user?.user;
-    const mssv = String(
-      req.session.user?.relatedId ||
-      req.session.user?.id ||
-      req.session.user?.user ||
-      ""
-    ).trim();
-
+    const username = String(auth.username || req.session.user?.username || "").trim();
     const currentPin = String(req.body.currentPin || "").trim();
     const newPin = String(req.body.newPin || "").trim();
 
-    if (!username || !mssv || !currentPin || !newPin) {
-      return res.status(400).json({ message: "Thiếu thông tin" });
+    if (!username || !currentPin || !newPin) {
+      return res.status(400).json({ message: "Vui lòng nhập đầy đủ PIN hiện tại và PIN mới" });
     }
-
-    if (!/^\d+$/.test(currentPin) || !/^\d+$/.test(newPin)) {
-      return res.status(400).json({ message: "PIN phải là số" });
+    if (!/^\d{4,100}$/.test(currentPin) || !/^\d{4,100}$/.test(newPin)) {
+      return res.status(400).json({ message: "PIN phải là số và có ít nhất 4 chữ số" });
     }
-
-    if (newPin.length < 4) {
-      return res.status(400).json({ message: "PIN mới phải có ít nhất 4 chữ số" });
-    }
-
     if (currentPin === newPin) {
       return res.status(400).json({ message: "PIN mới phải khác PIN hiện tại" });
     }
 
-    // 1. Kiểm tra PIN cũ.
-    const verifyRows = await queryAsync(
-      `EXEC sp_VerifyPIN @MASV = ?, @PIN = ?`,
-      [mssv, currentPin]
-    );
+    if (auth.isTeacher) {
+      const maGv = String(auth.relatedId || "").trim();
+      if (!maGv) {
+        return res.status(400).json({ message: "Session giảng viên thiếu MaGV" });
+      }
 
-    const valid = Number(verifyRows[0]?.IsValid || 0);
+      const verifyRows = await queryAsync(
+        `
+          SELECT CASE WHEN PIN_HASH = CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)), 2)
+                      THEN 1 ELSE 0 END AS IsValid
+          FROM dbo.GIANG_VIEN
+          WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
+        `,
+        [currentPin, maGv]
+      );
+      if (Number(verifyRows[0]?.IsValid || 0) !== 1) {
+        return res.status(401).json({ message: "PIN hiện tại không đúng" });
+      }
 
-    if (valid !== 1) {
+      const newTeacherPublicKey = await calculatePublicKeyFromPin(newPin);
+      const prepared = await prepareReEncryptTeacherGradesAfterPinChange({
+        maGv,
+        currentPin,
+        newPin,
+      });
+
+      await applyTeacherPinChangeTransaction({
+        maGv,
+        username,
+        currentPin,
+        newPin,
+        newTeacherPublicKey,
+        prepared,
+      });
+
+      return res.json({
+        success: true,
+        message: "Đổi PIN giảng viên thành công.",
+        reEncryptedGrades: prepared.updates.length,
+        repairedStudentPublicKeys: prepared.studentPublicKeyRepairs.size,
+      });
+    }
+
+    if (!auth.isStudent) {
+      return res.status(403).json({ message: "Vai trò hiện tại không được đổi PIN tại trang này" });
+    }
+
+    const mssv = String(auth.relatedId || req.session.user?.user || "").trim();
+    const verifyRows = await queryAsync(`EXEC sp_VerifyPIN @MASV = ?, @PIN = ?`, [mssv, currentPin]);
+    if (Number(verifyRows[0]?.IsValid || 0) !== 1) {
       return res.status(401).json({ message: "PIN hiện tại không đúng" });
     }
 
-    // 2. Chuẩn bị mã hóa lại toàn bộ điểm cũ theo PIN mới.
-    // Nếu bước này lỗi, chưa cập nhật PIN để tránh làm điểm cũ bị mất khả năng giải mã.
     const gradeUpdates = await prepareReEncryptStudentGradesAfterPinChange({
       mssv,
       currentPin,
       newPin,
     });
-
-    // 3. Tạo PUBLIC_KEY mới từ PIN mới.
     const newPublicKey = await calculatePublicKeyFromPin(newPin);
 
-    // 4. Cập nhật C mới cho các điểm đã có.
     for (const item of gradeUpdates) {
       await queryAsync(
         `
-          UPDATE DIEM_CRT
-          SET C = ?, UPDATED_AT = GETDATE()
+          UPDATE dbo.DIEM_CRT
+          SET C = ?,
+              START_INDEX = ?,
+              END_INDEX = ?,
+              SV_PUBLIC_KEY_CRT = ?,
+              ALGORITHM_VERSION = 'CRT_DH_V2',
+              KEY_VERSION = ISNULL(KEY_VERSION, 1) + 1,
+              UPDATED_AT = GETDATE()
           WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
             AND UPPER(LTRIM(RTRIM(MAHP))) = UPPER(?)
         `,
-        [item.newC, mssv, item.maHp]
+        [item.newC, item.newRange.startIndex, item.newRange.endIndex, newPublicKey, mssv, item.maHp]
       );
     }
 
-    // 5. Cập nhật PIN hash và PUBLIC_KEY sinh viên.
+    await queryAsync(`EXEC dbo.HashAndSavePIN @id = ?, @pin = ?`, [mssv, newPin]);
     await queryAsync(
-      `EXEC dbo.HashAndSavePIN @id = ?, @pin = ?`,
-      [mssv, newPin]
-    );
-
-    await queryAsync(
-      `
-        UPDATE SINH_VIEN
-        SET PUBLIC_KEY = ?
-        WHERE UPPER(LTRIM(RTRIM(MaSV))) = UPPER(?)
-      `,
+      `UPDATE dbo.SINH_VIEN SET PUBLIC_KEY = ? WHERE UPPER(LTRIM(RTRIM(MaSV))) = UPPER(?)`,
       [newPublicKey, mssv]
     );
-
-    // 6. Ghi log đổi PIN.
-    await queryAsync(
-      `EXEC sp_GhiLogDoiPin @User = ?, @MaSV = ?`,
-      [username, mssv]
-    );
+    await queryAsync(`EXEC sp_GhiLogDoiPin @User = ?, @MaSV = ?`, [username, mssv]);
 
     return res.json({
       success: true,
@@ -1033,9 +1472,10 @@ app.post("/api/set-pin", async (req, res) => {
     });
   } catch (err) {
     console.error("Lỗi cập nhật PIN:", err);
-    return res.status(500).json({
+    const statusCode = Number(err.statusCode) || 500;
+    return res.status(statusCode).json({
       success: false,
-      message: "Lỗi cập nhật PIN: " + err.message,
+      message: statusCode === 401 ? "PIN hiện tại không đúng" : "Không thể đổi PIN: " + err.message,
     });
   }
 });
@@ -1043,7 +1483,7 @@ app.post("/api/set-pin", async (req, res) => {
 
 // 2. Giảng viên nhập điểm theo flow mới: 1 môn - nhiều sinh viên
 // Mỗi sinh viên có GK, CK, TB -> mã hóa CRT -> lưu DIEM_CRT(MASV, MAHP, C)
-// Không lưu START_INDEX / END_INDEX. Hai giá trị này sẽ được tính lại khi giải mã.
+// Lưu START_INDEX / END_INDEX và ngữ cảnh CRT để đổi PIN có thể mã hóa lại an toàn.
 // 2. Giảng viên nhập điểm theo flow Diffie-Hellman + CRT
 // Mã hóa:
 //   PUBLIC_KEY sinh viên + PIN giảng viên
@@ -1055,7 +1495,7 @@ app.post("/api/set-pin", async (req, res) => {
 // Lưu:
 //   DIEM_CRT(MASV, MAHP, MAGV, C)
 //
-// Không lưu START_INDEX / END_INDEX.
+// Lưu START_INDEX / END_INDEX để phục vụ đổi PIN và kiểm tra tính toàn vẹn.
 app.post("/admin/nhap-diem", async (req, res) => {
   try {
     const auth = getAuthUser(req);
@@ -1198,7 +1638,7 @@ app.post("/admin/nhap-diem", async (req, res) => {
       sql.query(
         connectionString,
         `
-          SELECT PUBLIC_KEY
+          SELECT PUBLIC_KEY, PIN_HASH
           FROM GIANG_VIEN
           WHERE LTRIM(RTRIM(MaGV)) = ?
         `,
@@ -1219,9 +1659,26 @@ app.post("/admin/nhap-diem", async (req, res) => {
       });
     }
 
-    if (!gvRows[0].PUBLIC_KEY) {
-      return res.status(500).json({
-        message: `Giảng viên ${maGv} chưa có PUBLIC_KEY. Sinh viên sẽ không giải mã được nếu tiếp tục mã hóa.`
+    const submittedPinHash = crypto
+      .createHash("sha256")
+      .update(pin, "utf8")
+      .digest("hex")
+      .toUpperCase();
+    const storedPinHash = String(gvRows[0].PIN_HASH || "").trim().toUpperCase();
+
+    if (!storedPinHash || submittedPinHash !== storedPinHash) {
+      return res.status(401).json({
+        message: "PIN giảng viên không đúng. Không mã hóa dữ liệu bằng PIN sai."
+      });
+    }
+
+    const expectedTeacherPublicKey = await calculatePublicKeyFromPin(pin);
+    const storedTeacherPublicKey = String(gvRows[0].PUBLIC_KEY || "").trim();
+
+    if (!storedTeacherPublicKey || storedTeacherPublicKey !== expectedTeacherPublicKey) {
+      return res.status(409).json({
+        message:
+          "PUBLIC_KEY giảng viên chưa đồng bộ với PIN hiện tại. Hãy đổi PIN giảng viên một lần trên trang Encryption Key để hệ thống tự mã hóa lại dữ liệu cũ trước khi nhập điểm."
       });
     }
 
@@ -1561,26 +2018,41 @@ app.post("/admin/nhap-diem", async (req, res) => {
       //   Lưu MAGV để lúc sinh viên giải mã biết lấy PUBLIC_KEY
       //   của giảng viên nào.
       //
-      // Không lưu START_INDEX / END_INDEX.
+      // Lưu START_INDEX / END_INDEX để phục vụ đổi PIN và kiểm tra tính toàn vẹn.
       // =======================================================
 
       const queryInsertCrt = `
         IF EXISTS (
           SELECT 1
-          FROM DIEM_CRT
+          FROM dbo.DIEM_CRT
           WHERE LTRIM(RTRIM(MASV)) = ?
             AND LTRIM(RTRIM(MAHP)) = ?
         )
         BEGIN
-          UPDATE DIEM_CRT
-          SET C = ?, MAGV = ?
+          UPDATE dbo.DIEM_CRT
+          SET C = ?,
+              MAGV = ?,
+              START_INDEX = ?,
+              END_INDEX = ?,
+              NamHoc = ?,
+              HocKy = ?,
+              MAKHOA_CRT = ?,
+              MALOP_CRT = ?,
+              SV_PUBLIC_KEY_CRT = ?,
+              ALGORITHM_VERSION = 'CRT_DH_V2',
+              KEY_VERSION = ISNULL(KEY_VERSION, 1) + 1,
+              UPDATED_AT = GETDATE()
           WHERE LTRIM(RTRIM(MASV)) = ?
             AND LTRIM(RTRIM(MAHP)) = ?
         END
         ELSE
         BEGIN
-          INSERT INTO DIEM_CRT (MASV, MAHP, MAGV, C)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO dbo.DIEM_CRT (
+            MASV, MAHP, MAGV, C, START_INDEX, END_INDEX,
+            NamHoc, HocKy, MAKHOA_CRT, MALOP_CRT,
+            SV_PUBLIC_KEY_CRT, ALGORITHM_VERSION, KEY_VERSION, UPDATED_AT
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CRT_DH_V2', 1, GETDATE())
         END
       `;
 
@@ -1591,17 +2063,28 @@ app.post("/admin/nhap-diem", async (req, res) => {
           [
             mssvClean,
             courseIdClean,
-
             C,
             maGv,
-
+            startIndex,
+            endIndex,
+            academicYear,
+            semester,
+            String(sv.MaKhoa).trim(),
+            String(sv.MaLop).trim(),
+            svPublicKey,
             mssvClean,
             courseIdClean,
-
             mssvClean,
             courseIdClean,
             maGv,
-            C
+            C,
+            startIndex,
+            endIndex,
+            academicYear,
+            semester,
+            String(sv.MaKhoa).trim(),
+            String(sv.MaLop).trim(),
+            svPublicKey,
           ],
           (err) => {
             if (err) return reject(err);
@@ -1757,7 +2240,7 @@ app.post("/api/view-grades", async (req, res) => {
       sql.query(
         connectionString,
         `
-          SELECT C, MAGV
+          SELECT C, MAGV, START_INDEX, END_INDEX, MAKHOA_CRT, MALOP_CRT
           FROM DIEM_CRT
           WHERE LTRIM(RTRIM(MASV)) = ?
             AND LTRIM(RTRIM(MAHP)) = ?
@@ -1780,6 +2263,8 @@ app.post("/api/view-grades", async (req, res) => {
 
     const C = String(diemRows[0].C || "").trim();
     const maGv = String(diemRows[0].MAGV || "").trim();
+    const storedStartIndex = Number(diemRows[0].START_INDEX);
+    const storedEndIndex = Number(diemRows[0].END_INDEX);
 
     if (!C) {
       return res.status(500).json({
@@ -1910,8 +2395,8 @@ app.post("/api/view-grades", async (req, res) => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          maKhoa: String(sv.MaKhoa).trim(),
-          maLop: String(sv.MaLop).trim(),
+          maKhoa: String(diemRows[0].MAKHOA_CRT || sv.MaKhoa).trim(),
+          maLop: String(diemRows[0].MALOP_CRT || sv.MaLop).trim(),
           mssv: mssvClean,
           maHp: courseIdClean,
           N: 5000000,
@@ -1960,6 +2445,14 @@ app.post("/api/view-grades", async (req, res) => {
 
     console.log("START_INDEX GIẢI MÃ:", startIndex);
     console.log("END_INDEX GIẢI MÃ:", endIndex);
+
+    if (
+      Number.isInteger(storedStartIndex) &&
+      Number.isInteger(storedEndIndex) &&
+      (storedStartIndex !== startIndex || storedEndIndex !== endIndex)
+    ) {
+      return res.status(400).json({ message: "Nhập PIN sai" });
+    }
 
     // =========================================================
     // 6. Lấy lại đúng 3 số nguyên tố từ bảng SNT
