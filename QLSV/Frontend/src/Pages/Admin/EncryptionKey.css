@@ -1,0 +1,213 @@
+.admin-ek {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: #e2e8f0;
+}
+
+.admin-ek__grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 24px;
+}
+
+.admin-ek .card {
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(2, 8, 23, 0.24);
+}
+
+.admin-ek__title {
+  font-weight: 800;
+  color: #f8fafc;
+  margin-bottom: 18px;
+  font-size: 20px;
+}
+
+.admin-ek__title--compact {
+  margin-bottom: 0;
+}
+
+.admin-ek__eyebrow {
+  color: #60a5fa;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.admin-ek .badge {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.admin-ek .badge--ok {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+}
+
+.admin-ek__status {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+}
+
+.admin-ek__statusHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-ek__kv {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.admin-ek__kv li {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.admin-ek__kv span {
+  color: #94a3b8;
+}
+
+.admin-ek .mono {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.admin-ek__logs {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+}
+
+.admin-ek__logsTable {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.admin-ek__logsHead,
+.admin-ek__logsRow {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+}
+
+.admin-ek__logsHead {
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.admin-ek__logsBody .admin-ek__logsRow {
+  padding: 12px 14px;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.admin-ek__logsBody .admin-ek__logsRow:last-child {
+  border-bottom: none;
+}
+
+.admin-ek__logsBody .admin-ek__logsRow:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-ek__change {
+  grid-column: 1 / 2;
+  padding: 24px;
+}
+
+.admin-ek__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-ek__field {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-ek__field span {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-ek__field input {
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0 14px;
+  outline: none;
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+}
+
+.admin-ek__field input::placeholder {
+  color: #64748b;
+}
+
+.admin-ek__field input:focus {
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.admin-ek .btn {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-ek .btn--primary {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #fff;
+}
+
+.admin-ek .btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.admin-ek__msg {
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+@media (max-width: 980px) {
+  .admin-ek__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-ek__change {
+    grid-column: auto;
+  }
+}

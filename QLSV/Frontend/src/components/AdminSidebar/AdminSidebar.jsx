@@ -68,7 +68,7 @@ function AdminSidebar() {
           </NavLink>
           <NavLink to="/admin/logs" style={({ isActive }) => navLinkStyle(isActive)}>
             <i className="fa-solid fa-file-lines" style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ffffff' }}></i>
-            <span style={{ color: '#ffffff' }}>Encryption Logs</span>
+            <span style={{ color: '#ffffff' }}>Encryption Key</span>
           </NavLink>
         </nav>
 
