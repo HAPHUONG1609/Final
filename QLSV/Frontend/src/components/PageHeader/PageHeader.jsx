@@ -3,8 +3,7 @@ import { useNavigate } from "react-router-dom";
 import "./PageHeader.css";
 import Scur from "../../assets/icon/scurity.png";
 import Avt from "../../assets/icon/user.png";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
+import { logoutSession } from "../../utils/auth.js";
 
 /**
  * Reusable PageHeader component
@@ -18,17 +17,11 @@ function PageHeader({ showLogout = true, showAvatar = true, navLinks = [] }) {
 
   const handleLogout = async () => {
     try {
-      const res = await fetch(`${API_BASE}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Logout failed");
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      navigate("/", { replace: true });
+      await logoutSession();
+      navigate("/login", { replace: true });
     } catch (err) {
       console.error("Logout error:", err);
-      alert("Không thể đăng xuất. Vui lòng thử lại.");
+      alert("Không thể đăng xuất. Vui lòng kiểm tra backend và thử lại.");
     }
   };
 

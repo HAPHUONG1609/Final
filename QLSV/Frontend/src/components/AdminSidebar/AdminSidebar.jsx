@@ -1,28 +1,19 @@
 import React from "react";
 import { useNavigate, Outlet, NavLink } from "react-router-dom";
+import { logoutSession } from "../../utils/auth.js";
 
 function AdminSidebar() {
   const navigate = useNavigate();
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
   const roleName = String(localStorage.getItem("role") || "").trim().toUpperCase();
   const isTeacher = ["GIANGVIEN", "GIẢNGVIÊN", "GV"].includes(roleName);
 
   const onLogout = async () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("roleCode");
-    localStorage.removeItem("role");
-    localStorage.removeItem("username");
-
     try {
-      await fetch(`${API_BASE}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await logoutSession();
+      navigate("/login", { replace: true });
     } catch (err) {
       console.error("Logout error:", err);
-    } finally {
-      navigate("/login", { replace: true });
+      alert("Không thể đăng xuất. Vui lòng kiểm tra backend và thử lại.");
     }
   };
 

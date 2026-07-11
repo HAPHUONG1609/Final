@@ -1,24 +1,17 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import Avt from "../../assets/icon/user.png";
+import { logoutSession } from "../../utils/auth.js";
 
 function StudentSidebar() {
   const navigate = useNavigate();
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
-
   const onLogout = async () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-
     try {
-      await fetch(`${API_BASE}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await logoutSession();
+      navigate("/login", { replace: true });
     } catch (err) {
       console.error("Logout error:", err);
-    } finally {
-      navigate("/login", { replace: true });
+      alert("Không thể đăng xuất. Vui lòng kiểm tra backend và thử lại.");
     }
   };
 
