@@ -662,6 +662,112 @@ async function applyTeacherPinChangeTransaction({
   }
 }
 
+const TEACHER_PIN_CHANGE_JOBS = new Map();
+const ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV = new Map();
+const TEACHER_PIN_CHANGE_JOB_TTL_MS = 60 * 60 * 1000;
+
+function createTeacherPinChangeJobId() {
+  return `teacher-pin-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+}
+
+function serializeTeacherPinChangeJob(job) {
+  if (!job) return null;
+  return {
+    success: job.status === "completed",
+    async: true,
+    jobId: job.id,
+    status: job.status,
+    message: job.message,
+    step: job.step,
+    reEncryptedGrades: job.reEncryptedGrades,
+    repairedStudentPublicKeys: job.repairedStudentPublicKeys,
+    error: job.error,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    finishedAt: job.finishedAt,
+  };
+}
+
+function rememberTeacherPinChangeJob(job) {
+  TEACHER_PIN_CHANGE_JOBS.set(job.id, job);
+  const cleanupTimer = setTimeout(() => {
+    TEACHER_PIN_CHANGE_JOBS.delete(job.id);
+  }, TEACHER_PIN_CHANGE_JOB_TTL_MS);
+  if (typeof cleanupTimer.unref === "function") cleanupTimer.unref();
+}
+
+function startTeacherPinChangeJob({ maGv, username, currentPin, newPin }) {
+  const normalizedMaGv = String(maGv || "").trim().toUpperCase();
+  const job = {
+    id: createTeacherPinChangeJobId(),
+    maGv: normalizedMaGv,
+    username,
+    status: "queued",
+    step: "queued",
+    message: "Đã nhận yêu cầu đổi PIN. Hệ thống đang chuẩn bị mã hóa lại điểm CRT.",
+    reEncryptedGrades: 0,
+    repairedStudentPublicKeys: 0,
+    error: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    finishedAt: null,
+  };
+
+  rememberTeacherPinChangeJob(job);
+  ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV.set(normalizedMaGv, job.id);
+
+  setImmediate(async () => {
+    try {
+      job.status = "running";
+      job.step = "prepare";
+      job.updatedAt = new Date().toISOString();
+      job.message = "Đang giải mã điểm cũ và mã hóa lại theo PIN mới.";
+
+      const newTeacherPublicKey = await calculatePublicKeyFromPin(newPin);
+      const prepared = await prepareReEncryptTeacherGradesAfterPinChange({
+        maGv: normalizedMaGv,
+        currentPin,
+        newPin,
+      });
+
+      job.reEncryptedGrades = prepared.updates.length;
+      job.repairedStudentPublicKeys = prepared.studentPublicKeyRepairs.size;
+      job.step = "commit";
+      job.updatedAt = new Date().toISOString();
+      job.message = "Đang ghi PIN mới và điểm CRT mới vào database.";
+
+      await applyTeacherPinChangeTransaction({
+        maGv: normalizedMaGv,
+        username,
+        currentPin,
+        newPin,
+        newTeacherPublicKey,
+        prepared,
+      });
+
+      job.status = "completed";
+      job.step = "done";
+      job.message = "Đổi PIN giảng viên thành công. Các điểm cũ đã được mã hóa lại.";
+      job.finishedAt = new Date().toISOString();
+      job.updatedAt = job.finishedAt;
+    } catch (error) {
+      console.error("Lỗi job đổi PIN giảng viên:", error);
+      job.status = "failed";
+      job.step = "failed";
+      job.error = error.message || "Không thể đổi PIN";
+      job.message = "Không thể đổi PIN: " + job.error;
+      job.finishedAt = new Date().toISOString();
+      job.updatedAt = job.finishedAt;
+    } finally {
+      if (ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV.get(normalizedMaGv) === job.id) {
+        ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV.delete(normalizedMaGv);
+      }
+    }
+  });
+
+  return job;
+}
+
 async function postJson(url, payload) {
   const response = await fetch(url, {
     method: "POST",
@@ -1658,6 +1764,23 @@ app.put("/student/update", (req, res) => {
   });
 });
 
+app.get("/api/pin-change-jobs/:jobId", (req, res) => {
+  const auth = getAuthUser(req);
+  if (!auth.isLoggedIn) {
+    return res.status(401).json({ message: "Chưa đăng nhập" });
+  }
+
+  const job = TEACHER_PIN_CHANGE_JOBS.get(String(req.params.jobId || "").trim());
+  if (!job) {
+    return res.status(404).json({ message: "Không tìm thấy tiến trình đổi PIN" });
+  }
+
+  if (!auth.isTeacher || String(auth.relatedId || "").trim().toUpperCase() !== job.maGv) {
+    return res.status(403).json({ message: "Không có quyền xem tiến trình đổi PIN này" });
+  }
+
+  return res.json(serializeTeacherPinChangeJob(job));
+});
 
 
 // New Flow
@@ -1709,27 +1832,25 @@ app.post("/api/set-pin", async (req, res) => {
         return res.status(401).json({ message: "PIN hiện tại không đúng" });
       }
 
-      const newTeacherPublicKey = await calculatePublicKeyFromPin(newPin);
-      const prepared = await prepareReEncryptTeacherGradesAfterPinChange({
-        maGv,
-        currentPin,
-        newPin,
-      });
+      const activeJobId = ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV.get(maGv.toUpperCase());
+      const activeJob = activeJobId ? TEACHER_PIN_CHANGE_JOBS.get(activeJobId) : null;
+      if (activeJob && ["queued", "running"].includes(activeJob.status)) {
+        return res.status(202).json({
+          ...serializeTeacherPinChangeJob(activeJob),
+          message: "Đang có một yêu cầu đổi PIN đang xử lý. Vui lòng chờ tiến trình hiện tại hoàn tất.",
+        });
+      }
 
-      await applyTeacherPinChangeTransaction({
+      const job = startTeacherPinChangeJob({
         maGv,
         username,
         currentPin,
         newPin,
-        newTeacherPublicKey,
-        prepared,
       });
 
-      return res.json({
-        success: true,
-        message: "Đổi PIN giảng viên thành công.",
-        reEncryptedGrades: prepared.updates.length,
-        repairedStudentPublicKeys: prepared.studentPublicKeyRepairs.size,
+      return res.status(202).json({
+        ...serializeTeacherPinChangeJob(job),
+        message: "Đã nhận yêu cầu đổi PIN. Hệ thống đang mã hóa lại điểm CRT ở nền.",
       });
     }
 
