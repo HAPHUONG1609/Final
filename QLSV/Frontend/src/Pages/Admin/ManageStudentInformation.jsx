@@ -52,8 +52,8 @@ export default function ManageStudentInformation() {
   const [facultiesData, setFacultiesData] = useState([]);
 
   const [q, setQ] = useState("");
-  const [faculty, setFaculty] = useState("All");
-  const [status, setStatus] = useState("All");
+  const [faculty, setFaculty] = useState("Tất cả");
+  const [status, setStatus] = useState("Tất cả");
 
   const [showModal, setShowModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -93,7 +93,7 @@ export default function ManageStudentInformation() {
       setStudents(data);
     } catch (error) {
       console.error("fetchStudents error:", error);
-      alert(error.message);
+      alert("Tải danh sách sinh viên thất bại. Vui lòng kiểm tra kết nối máy chủ.");
     } finally {
       setLoading(false);
     }
@@ -119,7 +119,7 @@ export default function ManageStudentInformation() {
       setClasses(data);
     } catch (error) {
       console.error("fetchClasses error:", error);
-      alert(error.message);
+      alert("Tải danh sách lớp thất bại. Vui lòng kiểm tra kết nối máy chủ.");
     }
   };
 
@@ -143,7 +143,7 @@ export default function ManageStudentInformation() {
       setFacultiesData(data);
     } catch (error) {
       console.error("fetchFaculties error:", error);
-      alert(error.message);
+      alert("Tải danh sách khoa thất bại. Vui lòng kiểm tra kết nối máy chủ.");
     }
   };
 
@@ -154,11 +154,11 @@ export default function ManageStudentInformation() {
   }, []);
 
   const faculties = useMemo(
-    () => ["All", ...Array.from(new Set(students.map((x) => x.facultyId).filter(Boolean)))],
+    () => ["Tất cả", ...Array.from(new Set(students.map((x) => x.facultyId).filter(Boolean)))],
     [students]
   );
 
-  const statuses = ["All", "Đang học", "Bảo lưu", "Đã nghỉ"];
+  const statuses = ["Tất cả", "Đang học", "Bảo lưu", "Đã nghỉ"];
 
   const rows = useMemo(() => {
     const kw = q.trim().toLowerCase();
@@ -171,8 +171,8 @@ export default function ManageStudentInformation() {
         (r.email || "").toLowerCase().includes(kw) ||
         (r.facultyId || "").toLowerCase().includes(kw);
 
-      const matchFaculty = faculty === "All" || r.facultyId === faculty;
-      const matchStatus = status === "All" || r.status === status;
+      const matchFaculty = faculty === "Tất cả" || r.facultyId === faculty;
+      const matchStatus = status === "Tất cả" || r.status === status;
 
       return matchKw && matchFaculty && matchStatus;
     });
@@ -273,12 +273,12 @@ export default function ManageStudentInformation() {
       alert(data.message || "Thành công");
     } catch (error) {
       console.error("handleSave error:", error);
-      alert(error.message);
+      alert("Lưu thông tin sinh viên thất bại. Vui lòng thử lại.");
     }
   };
 
   const handleDelete = async (studentId) => {
-    const ok = window.confirm(`Delete ${studentId}?`);
+    const ok = window.confirm(`Bạn có chắc muốn xóa sinh viên ${studentId} không?`);
     if (!ok) return;
 
     try {
@@ -305,13 +305,13 @@ export default function ManageStudentInformation() {
       alert(data.message || "Đã xóa");
     } catch (error) {
       console.error("handleDelete error:", error);
-      alert(error.message);
+      alert("Xóa sinh viên thất bại. Vui lòng thử lại.");
     }
   };
 
   return (
     <div style={{ padding: 24, color: "#fff" }}>
-      <h2 style={{ margin: "8px 0 18px" }}>Student Information</h2>
+      <h2 style={{ margin: "8px 0 18px" }}>Thông tin sinh viên</h2>
 
       <div
         style={{
@@ -325,7 +325,7 @@ export default function ManageStudentInformation() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search by name, student ID, or faculty"
+          placeholder="Tìm theo tên, MSSV hoặc khoa"
           style={{
             flex: 1,
             minWidth: 240,
@@ -384,7 +384,7 @@ export default function ManageStudentInformation() {
             cursor: "pointer",
           }}
         >
-          Search
+          Tìm kiếm
         </button>
 
         <button
@@ -398,7 +398,7 @@ export default function ManageStudentInformation() {
             cursor: "pointer",
           }}
         >
-          + Add Student
+          + Thêm sinh viên
         </button>
       </div>
 
@@ -420,18 +420,18 @@ export default function ManageStudentInformation() {
             fontSize: 13,
           }}
         >
-          <div>Faculty ID</div>
-          <div>Class ID</div>
-          <div>Student ID</div>
-          <div>Full name</div>
+          <div>Mã khoa</div>
+          <div>Mã lớp</div>
+          <div>MSSV</div>
+          <div>Họ và tên</div>
           <div>Email</div>
-          <div>Status</div>
-          <div>Key Status</div>
-          <div>Actions</div>
+          <div>Trạng thái</div>
+          <div>Trạng thái khóa</div>
+          <div>Thao tác</div>
         </div>
 
         {loading && (
-          <div style={{ padding: 16, color: "#bbb" }}>Loading...</div>
+          <div style={{ padding: 16, color: "#bbb" }}>Đang tải...</div>
         )}
 
         {!loading &&
@@ -459,7 +459,11 @@ export default function ManageStudentInformation() {
 
               <div>
                 <Badge tone={r.keyStatus === "Generated" ? "info" : "neutral"}>
-                  {r.keyStatus}
+                  {r.keyStatus === "Generated"
+                    ? "Đã tạo"
+                    : r.keyStatus === "Not yet"
+                    ? "Chưa tạo"
+                    : r.keyStatus}
                 </Badge>
               </div>
 
@@ -474,7 +478,7 @@ export default function ManageStudentInformation() {
                     cursor: "pointer",
                   }}
                 >
-                  Edit
+                  Chỉnh sửa
                 </button>
 
                 <button
@@ -488,14 +492,14 @@ export default function ManageStudentInformation() {
                     cursor: "pointer",
                   }}
                 >
-                  Delete
+                  Xóa
                 </button>
               </div>
             </div>
           ))}
 
         {!loading && rows.length === 0 && (
-          <div style={{ padding: 16, color: "#bbb" }}>No students found.</div>
+          <div style={{ padding: 16, color: "#bbb" }}>Không tìm thấy sinh viên nào.</div>
         )}
 
         <Pagination
@@ -531,7 +535,7 @@ export default function ManageStudentInformation() {
             }}
           >
             <h3 style={{ marginBottom: 18 }}>
-              {isEdit ? "Edit Student" : "Add Student"}
+              {isEdit ? "Chỉnh sửa sinh viên" : "Thêm sinh viên"}
             </h3>
 
             <div
@@ -568,7 +572,7 @@ export default function ManageStudentInformation() {
               </select>
 
               <input
-                placeholder="Student ID"
+                placeholder="MSSV"
                 value={form.studentId}
                 disabled={isEdit}
                 onChange={(e) => handleChange("studentId", e.target.value)}
@@ -580,7 +584,7 @@ export default function ManageStudentInformation() {
               />
 
               <input
-                placeholder="Full name"
+                placeholder="Họ và tên"
                 value={form.fullName}
                 onChange={(e) => handleChange("fullName", e.target.value)}
                 style={inputStyle}
@@ -665,8 +669,8 @@ export default function ManageStudentInformation() {
                 style={inputStyle}
                 disabled
               >
-                <option value="Generated">Generated</option>
-                <option value="Not yet">Not yet</option>
+                <option value="Generated">Đã tạo</option>
+                <option value="Not yet">Chưa tạo</option>
               </select>
             </div>
 
@@ -689,7 +693,7 @@ export default function ManageStudentInformation() {
                   cursor: "pointer",
                 }}
               >
-                Cancel
+                Hủy
               </button>
 
               <button
@@ -703,7 +707,7 @@ export default function ManageStudentInformation() {
                   cursor: "pointer",
                 }}
               >
-                {isEdit ? "Save Changes" : "Add Student"}
+                {isEdit ? "Lưu thay đổi" : "Thêm sinh viên"}
               </button>
             </div>
           </div>

@@ -27,19 +27,19 @@ function Navbar() {
         <nav className="sidebar__nav">
           <NavLink to="/dashboard" className="sidebar__link">
             <i className="fa-solid fa-gauge"></i>
-            <span>Dashboard</span>
+            <span>Bảng điều khiển</span>
           </NavLink>
           <NavLink to="/academic" className="sidebar__link">
             <i className="fa-solid fa-graduation-cap"></i>
-            <span>Academic</span>
+            <span>Học tập</span>
           </NavLink>
           <NavLink to="/personal-info" className="sidebar__link">
             <i className="fa-solid fa-user"></i>
-            <span>Personal Info</span>
+            <span>Thông tin cá nhân</span>
           </NavLink>
           <NavLink to="/encryption-key" className="sidebar__link">
             <i className="fa-solid fa-key"></i>
-            <span>My Encryption Key</span>
+            <span>Khóa mã hóa của tôi</span>
           </NavLink>
         </nav>
       </aside>
@@ -47,7 +47,7 @@ function Navbar() {
       <header className="topbar">
         <div className="topbar__right">
           <button className="topbar__logout" onClick={onLogout}>
-            <i className="fa-solid fa-right-from-bracket"></i> Logout
+            <i className="fa-solid fa-right-from-bracket"></i> Đăng xuất
           </button>
           <img src={Avt} alt="avatar" className="topbar__avatar" />
         </div>

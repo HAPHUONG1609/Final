@@ -3,7 +3,7 @@ import "./EncryptionKey.css";
 
 function AdminEncryptionKey() {
   const keyInfo = {
-    status: "Active",
+    status: "Đang hoạt động",
     keyId: "LPIN-2024-001-A",
     generatedAt: "2024-01-15",
     expiryAt: "2025-01-15",
@@ -31,7 +31,7 @@ function AdminEncryptionKey() {
 
   const formatDateTime = (value, textValue) => {
     if (textValue) return textValue;
-    if (!value) return "N/A";
+    if (!value) return "Không có";
     return new Date(value).toLocaleString("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh",
       hour: "2-digit",
@@ -151,11 +151,11 @@ function AdminEncryptionKey() {
               <strong className="mono">{keyInfo.keyId}</strong>
             </li>
             <li>
-              <span>Created Date</span>
+              <span>Ngày tạo</span>
               <strong>{keyInfo.generatedAt}</strong>
             </li>
             <li>
-              <span>Expiry Date</span>
+              <span>Ngày hết hạn</span>
               <strong>{keyInfo.expiryAt}</strong>
             </li>
           </ul>
@@ -166,8 +166,8 @@ function AdminEncryptionKey() {
 
           <div className="admin-ek__logsTable">
             <div className="admin-ek__logsHead">
-              <div>Date</div>
-              <div>Action</div>
+              <div>Ngày</div>
+              <div>Hành động</div>
             </div>
 
             <div className="admin-ek__logsBody">

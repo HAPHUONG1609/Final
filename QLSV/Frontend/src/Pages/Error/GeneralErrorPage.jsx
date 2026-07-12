@@ -14,13 +14,13 @@ function GeneralErrorPage() {
 
   // Get error details from navigation state (if available)
   const errorDetails = location.state?.error || null;
-  const errorMessage = location.state?.message || "An internal error has occurred. Your request can't be processed at this time";
+  const errorMessage = location.state?.message || "Đã xảy ra lỗi nội bộ. Yêu cầu của bạn hiện không thể được xử lý.";
 
   const navLinks = [
     { label: "Thông tin chung", to: "/student" },
     { label: "Học tập", to: "/Academic" },
     { label: "Đăng kí học phần", to: "#" },
-    { label: "Home", to: "/" },
+    { label: "Trang chủ", to: "/" },
   ];
 
   return (
@@ -32,7 +32,7 @@ function GeneralErrorPage() {
           <i className="fa-solid fa-circle-exclamation"></i>
         </div>
 
-        <h1 className="error-page__heading">Oops! Something went wrong</h1>
+        <h1 className="error-page__heading">Ôi! Đã xảy ra sự cố</h1>
 
         <p className="error-page__description">
           {errorMessage}
@@ -48,7 +48,7 @@ function GeneralErrorPage() {
           className="error-page__btn"
           onClick={() => navigate("/")}
         >
-          Go to Home Page
+          Về trang chủ
         </button>
       </main>
     </div>

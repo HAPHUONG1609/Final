@@ -1,8 +1,9 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
-// Student pages
 import Login from "./Pages/Login/Login.jsx";
+
+// Student pages
 import Dashboard from "./Pages/Dashboard/Dashboard.jsx";
 import Academic from "./Pages/Academic/Academic.jsx";
 import PersonalInfo from "./Pages/PersonalInfo/PersonalInfo.jsx";
@@ -22,6 +23,23 @@ import ManagementKey from "./Pages/Admin/ManagementKey.jsx";
 import ManageStudentInformation from "./Pages/Admin/ManageStudentInformation.jsx";
 import ManageGrades from "./Pages/Admin/ManageGrades.jsx";
 import AdminEncryptionKey from "./Pages/Admin/EncryptionKey.jsx";
+
+// Teacher layout
+import TeacherSidebar from "./components/TeacherSidebar/TeacherSidebar.jsx";
+
+function RequireRole({ allowedRoleCodes }) {
+  const roleCode = localStorage.getItem("roleCode");
+
+  if (roleCode === null) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!allowedRoleCodes.map(String).includes(String(roleCode))) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Outlet />;
+}
 
 export default function App() {
   return (

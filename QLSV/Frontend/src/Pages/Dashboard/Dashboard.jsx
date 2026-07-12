@@ -7,7 +7,7 @@ import User from "../../assets/icon/user.png";
 import Scur from "../../assets/icon/scurity.png";
 
 function Dashboard() {
-  const [keyStatus, setKeyStatus] = useState("Unverified");
+  const [keyStatus, setKeyStatus] = useState("Chưa xác minh");
   const [student, setStudent] = useState({});
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -36,7 +36,7 @@ function Dashboard() {
         }
       } catch (e) {
         console.error(e);
-        setErr(e.message || "Failed to load profile");
+        setErr(e.message || "Không tải được hồ sơ");
       } finally {
         setLoading(false);
       }
@@ -81,7 +81,7 @@ function Dashboard() {
   };
 
   const onVerifyClick = async () => {
-    alert("Verify action here!");
+    alert("Thao tác xác minh tại đây!");
   };
 
   return (
@@ -92,13 +92,13 @@ function Dashboard() {
         </h1>
 
         <p className="dash__subtitle">
-          Welcome to your student portal. Here you can manage your academic progress,
-          personal information, and encryption keys.
+          Chào mừng bạn đến với cổng sinh viên. Tại đây bạn có thể quản lý tiến độ học tập,
+          thông tin cá nhân và khóa mã hóa.
         </p>
 
         {!!err && (
           <div style={{ marginTop: 8, color: "var(--warn, #c00)" }}>
-            Error: {err}
+            Lỗi: {err}
           </div>
         )}
       </section>
@@ -107,26 +107,26 @@ function Dashboard() {
       <section className="dash__grid4">
         <div className="card info">
           <img src={User} alt="" className="info_icon" />
-          <div className="info__title">Faculty</div>
+          <div className="info__title">Ngành đào tạo</div>
           <div className="info__value info__faculty-value">{loading ? "…" : student.NganhDT || "—"}</div>
         </div>
 
         <div className="card info">
           <img src={Class} alt="" className="info_icon" />
-          <div className="info__title">Class</div>
+          <div className="info__title">Lớp</div>
           <div className="info__value">{loading ? "…" : student.MaLop || "—"}</div>
         </div>
 
         <div className="card info">
           <img src={Id} alt="" className="info_icon" />
-          <div className="info__title">Student ID</div>
+          <div className="info__title">MSSV</div>
           <div className="info__value id">{loading ? "…" : student.MaSV || "—"}</div>
         </div>
 
         <div className="card info">
           <img src={Key} alt="" className="info_icon" />
-          <div className="info__title">Key Status</div>
-          <div className={`status ${keyStatus === "Verified" ? "ok" : "warn"}`}>
+          <div className="info__title">Trạng thái khóa</div>
+          <div className={`status ${keyStatus === "Đã xác minh" ? "ok" : "warn"}`}>
             {loading ? "…" : keyStatus}
           </div>
           <button
@@ -134,7 +134,7 @@ function Dashboard() {
             onClick={onVerifyClick}
             disabled={loading}
           >
-            Verify
+            Xác minh
           </button>
         </div>
       </section>
@@ -142,34 +142,34 @@ function Dashboard() {
       <section className="card dash__security">
         <div className="sec__text">
           <img src={Scur} alt="" className="shield" />
-          <div className="sec__title">Security Summary</div>
+          <div className="sec__title">Tóm tắt bảo mật</div>
         </div>
 
         <div className="sec__desc">
-          Your data is protected with advanced encryption. Regularly verify your
-          encryption key for enhanced security.
+          Dữ liệu của bạn được bảo vệ bằng cơ chế mã hóa nâng cao. Hãy xác minh
+          khóa mã hóa thường xuyên để tăng cường bảo mật.
         </div>
       </section>
 
       <section className="dash__grid2">
         <div className="card list">
-          <div className="list__title">Recent Activity</div>
+          <div className="list__title">Hoạt động gần đây</div>
           <ul className="list__items">
             <li>
-              <span>Accessed encryption key</span>
-              <time>2 hours ago</time>
+              <span>Đã truy cập khóa mã hóa</span>
+              <time>2 giờ trước</time>
             </li>
             <li>
-              <span>Updated personal information</span>
-              <time>Yesterday</time>
+              <span>Đã cập nhật thông tin cá nhân</span>
+              <time>Hôm qua</time>
             </li>
             <li>
-              <span>Submitted assignment ‘Cryptography Basics’</span>
-              <time>3 days ago</time>
+              <span>Đã nộp bài ‘Cơ bản về mật mã học’</span>
+              <time>3 ngày trước</time>
             </li>
             <li>
-              <span>Received new notification</span>
-              <time>1 week ago</time>
+              <span>Đã nhận thông báo mới</span>
+              <time>1 tuần trước</time>
             </li>
           </ul>
         </div>

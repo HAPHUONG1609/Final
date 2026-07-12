@@ -56,7 +56,7 @@ function PersonalInfo() {
           });
         }
       } catch (e) {
-        if (!dead) setErr(e.message || "Failed to load profile");
+        if (!dead) setErr(e.message || "Không tải được hồ sơ");
       } finally {
         if (!dead) setLoading(false);
       }
@@ -87,7 +87,7 @@ function PersonalInfo() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.message || "Update failed");
+        throw new Error(data.message || "Cập nhật thất bại");
       }
 
       alert("Cập nhật thành công");
@@ -102,21 +102,21 @@ function PersonalInfo() {
     <div className="pi-page">
       <div className="pi">
         <div className="pi__card">
-        <h1 className="pi__title">Personal Information</h1>
+        <h1 className="pi__title">Thông tin cá nhân</h1>
 
         {!!err && (
-          <div className="pi__error">Error: {err}</div>
+          <div className="pi__error">Lỗi: {err}</div>
         )}
 
         <div className="pi__form">
           {/* Left column */}
           <div className="pi__column">
             <div className="pi__field">
-              <label className="pi__label">Full name</label>
+              <label className="pi__label">Họ và tên</label>
               <input
                 type="text"
                 className="pi__input pi__input--readonly"
-                placeholder="Enter full name"
+                placeholder="Nhập họ và tên"
                 value={loading ? "" : profile.HoTen}
                 readOnly
                 disabled={loading}
@@ -124,7 +124,7 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Date of birth</label>
+              <label className="pi__label">Ngày sinh</label>
               <input
                 type="date"
                 className="pi__input pi__input--readonly"
@@ -136,7 +136,7 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Place of birth</label>
+              <label className="pi__label">Nơi sinh</label>
               <input
                 type="text"
                 className={`pi__input ${isEditing ? 'pi__input--editable' : ''}`}
@@ -149,11 +149,11 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Gender</label>
+              <label className="pi__label">Giới tính</label>
               <input
                 type="text"
                 className="pi__input pi__input--readonly"
-                placeholder="Select gender"
+                placeholder="Chọn giới tính"
                 value={loading ? "" : profile.GioiTinh}
                 readOnly
                 disabled={loading}
@@ -161,11 +161,11 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Education level</label>
+              <label className="pi__label">Bậc đào tạo</label>
               <input
                 type="text"
                 className="pi__input pi__input--readonly"
-                placeholder="Select education level"
+                placeholder="Chọn bậc đào tạo"
                 value={loading ? "" : profile.BacDaoTao}
                 readOnly
                 disabled={loading}
@@ -173,7 +173,7 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Course</label>
+              <label className="pi__label">Khóa học</label>
               <input
                 type="text"
                 className="pi__input pi__input--readonly"
@@ -188,11 +188,11 @@ function PersonalInfo() {
           {/* Right column */}
           <div className="pi__column">
             <div className="pi__field">
-              <label className="pi__label">Training type</label>
+              <label className="pi__label">Loại hình đào tạo</label>
               <input
                 type="text"
                 className="pi__input pi__input--readonly"
-                placeholder="Select training type"
+                placeholder="Chọn loại hình đào tạo"
                 value={loading ? "" : profile.LoaiHinhDT}
                 readOnly
                 disabled={loading}
@@ -200,11 +200,11 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Specialization</label>
+              <label className="pi__label">Chuyên ngành</label>
               <input
                 type="text"
                 className="pi__input pi__input--readonly"
-                placeholder="Select specialization"
+                placeholder="Chọn chuyên ngành"
                 value={loading ? "" : profile.ChuyenNganh}
                 readOnly
                 disabled={loading}
@@ -212,11 +212,11 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Faculty</label>
+              <label className="pi__label">Khoa</label>
               <input
                 type="text"
                 className="pi__input pi__input--readonly"
-                placeholder="Select faculty"
+                placeholder="Chọn khoa"
                 value={loading ? "" : profile.Khoa}
                 readOnly
                 disabled={loading}
@@ -224,11 +224,11 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Class</label>
+              <label className="pi__label">Lớp</label>
               <input
                 type="text"
                 className="pi__input pi__input--readonly"
-                placeholder="Select class"
+                placeholder="Chọn lớp"
                 value={loading ? "" : profile.MaLop}
                 readOnly
                 disabled={loading}
@@ -236,11 +236,11 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Student ID</label>
+              <label className="pi__label">MSSV</label>
               <input
                 type="text"
                 className="pi__input pi__input--readonly"
-                placeholder="Enter student ID"
+                placeholder="Nhập MSSV"
                 value={loading ? "" : profile.MaSV}
                 readOnly
                 disabled={loading}
@@ -248,10 +248,10 @@ function PersonalInfo() {
             </div>
 
             <div className="pi__field">
-              <label className="pi__label">Key status</label>
+              <label className="pi__label">Trạng thái khóa</label>
               <div className="pi__keyStatus">
                 <span className={`pi__badge ${profile.TinhTrang === "verified" ? "pi__badge--verified" : "pi__badge--unverified"}`}>
-                  {profile.TinhTrang === "verified" ? "Verified" : "Unverified"}
+                  {profile.TinhTrang === "verified" ? "Đã xác minh" : "Chưa xác minh"}
                 </span>
                 <button 
                   type="button" 
@@ -259,7 +259,7 @@ function PersonalInfo() {
                   onClick={handleVerify}
                   disabled={loading}
                 >
-                  Verify
+                  Xác minh
                 </button>
               </div>
             </div>
@@ -277,7 +277,7 @@ function PersonalInfo() {
             }
           }}
         >
-          {isEditing ? "Save" : "Edit"}
+          {isEditing ? "Lưu" : "Chỉnh sửa"}
         </button>
       </div>
       </div>
