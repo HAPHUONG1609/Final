@@ -23,6 +23,7 @@ const SESSION_CLEAR_COOKIE_OPTIONS = {
 
 const path = require("path");
 const crypto = require("crypto"); // Dùng để mã hóa/giải mã AES
+const http = require("http");
   //Thêm vào để load được sinh viên trong quá trình nhập điểm, và gọi Java API cho CRT, nếu không thêm, quá trình gọi điểm sẽ bị chặn
 const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
@@ -189,6 +190,12 @@ function handleLogout(req, res) {
 const JAVA_CRYPTO_URL = (process.env.JAVA_CRYPTO_URL || "http://localhost:8080").replace(/\/+$/, "");
 const JAVA_CRYPTO_INTERNAL_BASE = `${JAVA_CRYPTO_URL}/internal/crypto`;
 const JAVA_GRADE_CRT_BASE = `${JAVA_CRYPTO_INTERNAL_BASE}/grade-crt`;
+const JAVA_CRYPTO_HTTP_AGENT = new http.Agent({
+  keepAlive: true,
+  maxSockets: 8,
+  maxFreeSockets: 8,
+  timeout: 120000,
+});
 
 function queryAsync(query, params = []) {
   return new Promise((resolve, reject) => {
@@ -292,7 +299,7 @@ function normalizeRange(startIndex, endIndex) {
   return { startIndex: start, endIndex: end };
 }
 
-async function tryDecryptGradeWithRanges({ mssv, C, ranges }) {
+async function tryDecryptGradeWithRanges({ mssv, C, ranges, getPrimes = getPrimesByRange }) {
   const tried = new Set();
   let lastError = null;
 
@@ -305,7 +312,7 @@ async function tryDecryptGradeWithRanges({ mssv, C, ranges }) {
     tried.add(key);
 
     try {
-      const primes = await getPrimesByRange(range.startIndex, range.endIndex);
+      const primes = await getPrimes(range.startIndex, range.endIndex);
       const plaintext = await decryptGradeCrt({ mssv, C, primes });
       if (isValidGradePlaintext(plaintext)) {
         return { plaintext, range, primes };
@@ -316,6 +323,24 @@ async function tryDecryptGradeWithRanges({ mssv, C, ranges }) {
   }
 
   throw lastError || new Error("Không tìm được khoảng số nguyên tố hợp lệ để giải mã dữ liệu CRT");
+}
+
+function createPrimeRangeCache() {
+  const cache = new Map();
+
+  return async (startIndex, endIndex) => {
+    const key = `${startIndex}:${endIndex}`;
+    if (!cache.has(key)) {
+      cache.set(
+        key,
+        getPrimesByRange(startIndex, endIndex).catch((error) => {
+          cache.delete(key);
+          throw error;
+        })
+      );
+    }
+    return cache.get(key);
+  };
 }
 
 async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, newPin }) {
@@ -358,6 +383,7 @@ async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, n
   );
 
   const studentPublicKeyRepairs = new Map();
+  const getCachedPrimesByRange = createPrimeRangeCache();
 
   console.log(
     `[PIN] Giảng viên ${maGv}: chuẩn bị mã hóa lại ${gradeRows.length} điểm, concurrency=${PIN_REENCRYPT_CONCURRENCY}`
@@ -391,38 +417,41 @@ async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, n
       throw new Error(`Sinh viên ${mssv} chưa có PUBLIC_KEY hợp lệ`);
     }
 
-    // Không đọc START_INDEX/END_INDEX từ database. Khoảng số nguyên tố cũ
-    // luôn được dẫn xuất lại trong bộ nhớ từ PIN hiện tại + PUBLIC_KEY sinh viên.
-    const oldRanges = [];
-
     const oldPublicKeyCandidates = [
       encryptedSvPublicKey,
       currentSvPublicKey,
       LEGACY_DEMO_PUBLIC_KEY,
     ].filter((value, index, array) => /^\d+$/.test(value) && array.indexOf(value) === index);
 
+    // Thử từng PUBLIC_KEY và dừng ngay khi giải mã thành công. Flow CRT không đổi,
+    // nhưng không còn tính prime-range cho các candidate không cần thiết.
+    let decrypted = null;
+    let lastDecryptError = null;
     for (const publicKey of oldPublicKeyCandidates) {
       try {
-        oldRanges.push(
-          await calculatePrimeRange({
-            maKhoa,
-            maLop,
-            mssv,
-            maHp,
-            publicKey,
-            pin: currentPin,
-          })
-        );
+        const oldRange = await calculatePrimeRange({
+          maKhoa,
+          maLop,
+          mssv,
+          maHp,
+          publicKey,
+          pin: currentPin,
+        });
+        decrypted = await tryDecryptGradeWithRanges({
+          mssv,
+          C: oldC,
+          ranges: [oldRange],
+          getPrimes: getCachedPrimesByRange,
+        });
+        break;
       } catch (error) {
-        // Thử candidate kế tiếp. Lỗi cuối cùng sẽ được báo khi không candidate nào giải mã được.
+        lastDecryptError = error;
       }
     }
 
-    const decrypted = await tryDecryptGradeWithRanges({
-      mssv,
-      C: oldC,
-      ranges: oldRanges,
-    });
+    if (!decrypted) {
+      throw lastDecryptError || new Error(`Không thể giải mã dữ liệu CRT tại ${mssv}-${maHp}`);
+    }
 
     const newRange = await calculatePrimeRange({
       maKhoa,
@@ -432,7 +461,7 @@ async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, n
       publicKey: newSvPublicKey,
       pin: newPin,
     });
-    const newPrimes = await getPrimesByRange(newRange.startIndex, newRange.endIndex);
+    const newPrimes = await getCachedPrimesByRange(newRange.startIndex, newRange.endIndex);
     const newC = await encryptGradeCrt({
       mssv,
       plaintext: decrypted.plaintext,
@@ -638,6 +667,7 @@ async function postJson(url, payload) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    agent: JAVA_CRYPTO_HTTP_AGENT,
   });
 
   const text = await response.text();
