@@ -145,7 +145,9 @@ function open(connectionString, callback) {
             .catch(() => cb(null));
         },
         close(cb) {
-          cb(null);
+          if (typeof cb === "function") {
+            cb(null);
+          }
         },
       };
 

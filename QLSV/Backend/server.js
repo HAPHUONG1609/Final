@@ -242,6 +242,29 @@ function closeConnectionAsync(conn) {
   });
 }
 
+const PIN_REENCRYPT_CONCURRENCY = Math.max(
+  1,
+  Math.min(8, Number.parseInt(process.env.PIN_REENCRYPT_CONCURRENCY || "4", 10) || 4)
+);
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker())
+  );
+  return results;
+}
+
 const LEGACY_DEMO_PUBLIC_KEY =
   "98765432109876543210987654321098765432109876543210";
 const DEFAULT_PIN_HASH = crypto
@@ -334,10 +357,16 @@ async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, n
     [maGv]
   );
 
-  const updates = [];
   const studentPublicKeyRepairs = new Map();
 
-  for (const row of gradeRows) {
+  console.log(
+    `[PIN] Giảng viên ${maGv}: chuẩn bị mã hóa lại ${gradeRows.length} điểm, concurrency=${PIN_REENCRYPT_CONCURRENCY}`
+  );
+
+  const updates = await mapWithConcurrency(
+    gradeRows,
+    PIN_REENCRYPT_CONCURRENCY,
+    async (row) => {
     const mssv = String(row.MASV || "").trim();
     const maHp = String(row.MAHP || "").trim();
     const oldC = String(row.C || "").trim();
@@ -415,7 +444,7 @@ async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, n
       throw new Error(`Kiểm tra mã hóa lại thất bại tại ${mssv}-${maHp}`);
     }
 
-    updates.push({
+    return {
       mssv,
       maHp,
       maGv,
@@ -426,8 +455,11 @@ async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, n
       newSvPublicKey,
       newRange,
       nextKeyVersion: Number(row.KEY_VERSION || 1) + 1,
-    });
-  }
+    };
+    }
+  );
+
+  console.log(`[PIN] Giảng viên ${maGv}: đã chuẩn bị xong ${updates.length} điểm`);
 
   return { updates, studentPublicKeyRepairs };
 }
