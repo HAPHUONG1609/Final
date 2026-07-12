@@ -36,7 +36,7 @@ function AdminDashboard() {
     try {
       return JSON.parse(text);
     } catch {
-      console.error(`${label} không trả về JSON:`, text);
+        console.error(`${label} không trả về JSON:`, text);
       throw new Error(`${label} không hợp lệ`);
     }
   };
@@ -83,7 +83,7 @@ function AdminDashboard() {
 const handleSave = async () => {
   // Kiểm tra dữ liệu bắt buộc trên form
   if (!form.facultyId || !form.classId || !form.studentId) {
-    alert("Vui lòng điền đầy đủ các trường Faculty ID và Class ID.");
+    alert("Vui lòng điền đầy đủ các trường Mã khoa và Mã lớp.");
     return;
   }
 
@@ -109,7 +109,7 @@ const handleSave = async () => {
       setStudentKeys((prev) =>
         prev.map((item) => (item.studentId === form.studentId ? { ...form } : item))
       );
-      alert("Đã lưu thay đổi vào hệ thống!");
+        alert("Đã lưu thay đổi vào hệ thống!");
       closeModal();
     } else {
       alert("Lỗi từ server: " + result.message);
@@ -127,18 +127,18 @@ const handleSave = async () => {
   };
 
   const [logs] = useState([
-    { time: "2023-10-27 10:30:01", message: "Student S123456: Key generated successfully.", status: "Success" },
-    { time: "2023-10-27 10:29:55", message: "Student S654321: Encryption failed. Error: Invalid PIN.", status: "Error" },
-    { time: "2023-10-27 10:28:10", message: "Admin login from IP 192.168.1.10.", status: "Info" },
-    { time: "2023-10-27 10:27:30", message: "Student S345678: Key updated.", status: "Info" },
-    { time: "2023-10-27 10:26:05", message: "System backup initiated.", status: "Info" },
+    { time: "2023-10-27 10:30:01", message: "Sinh viên S123456: Đã tạo khóa thành công.", status: "Thành công" },
+    { time: "2023-10-27 10:29:55", message: "Sinh viên S654321: Mã hóa thất bại. Lỗi: PIN không hợp lệ.", status: "Lỗi" },
+    { time: "2023-10-27 10:28:10", message: "Đăng nhập quản trị từ IP 192.168.1.10.", status: "Thông tin" },
+    { time: "2023-10-27 10:27:30", message: "Sinh viên S345678: Đã cập nhật khóa.", status: "Thông tin" },
+    { time: "2023-10-27 10:26:05", message: "Đã khởi tạo sao lưu hệ thống.", status: "Thông tin" },
   ]);
 
   const getLogStatusColor = (status) => {
     switch (status.toLowerCase()) {
-      case "success": return "text-green-400";
-      case "error": return "text-red-400";
-      case "info": return "text-blue-400";
+      case "thành công": return "text-green-400";
+      case "lỗi": return "text-red-400";
+      case "thông tin": return "text-blue-400";
       default: return "text-slate-400";
     }
   };
@@ -156,12 +156,12 @@ const handleSave = async () => {
             />
           </div>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-white mb-4">CRT Encryption Management</h1>
+            <h1 className="text-2xl font-bold text-white mb-4">Quản lý mã hóa CRT</h1>
             <p className="text-slate-400 text-sm leading-relaxed mb-6 max-w-xl">
-              Securely manage student data and academic records using advance Chinese Remainder Theorem encryption. Generate, update, and monitor keys with confidence.
+              Quản lý an toàn dữ liệu sinh viên và hồ sơ học tập bằng cơ chế mã hóa Chinese Remainder Theorem. Tạo, cập nhật và theo dõi khóa một cách tin cậy.
             </p>
             <button className="px-6 py-2.5 bg-blue-600 text-white rounded-[12px] text-sm font-medium hover:bg-blue-700 transition-colors">
-              Access Admin Dashboard
+              Truy cập bảng điều khiển quản trị
             </button>
           </div>
         </div>
@@ -169,18 +169,18 @@ const handleSave = async () => {
 
       {/* Card 2: Manage Student Keys */}
       <div className="bg-[#0f172a]/60 rounded-[16px] p-6 shadow-lg shadow-black/10 border border-white/10">
-        <h2 className="text-xl font-semibold text-blue-400 mb-6">Manage Student Keys</h2>
-        <h3 className="text-lg font-semibold text-white mb-4">Student Key Records</h3>
+        <h2 className="text-xl font-semibold text-blue-400 mb-6">Quản lý khóa sinh viên</h2>
+        <h3 className="text-lg font-semibold text-white mb-4">Danh sách khóa sinh viên</h3>
         <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid rgba(255,255,255,0.07)" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", background: "rgba(15,23,42,0.6)" }}>
-                <th style={thStyle}>Faculty ID</th>
-                <th style={thStyle}>Class ID</th>
-                <th style={thStyle}>Student ID</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Created Date</th>
-                <th style={thStyle}>Actions</th>
+                <th style={thStyle}>Mã khoa</th>
+                <th style={thStyle}>Mã lớp</th>
+                <th style={thStyle}>MSSV</th>
+                <th style={thStyle}>Trạng thái</th>
+                <th style={thStyle}>Ngày tạo</th>
+                <th style={thStyle}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -235,7 +235,7 @@ const handleSave = async () => {
                           fontWeight: 600,
                         }}
                       >
-                        Update
+                        Cập nhật
                       </button>
                       <button
                         onClick={() => handleDelete(key.studentId)}
@@ -250,7 +250,7 @@ const handleSave = async () => {
                           fontWeight: 600,
                         }}
                       >
-                        Delete
+                        Xóa
                       </button>
                     </div>
                   </td>
@@ -264,12 +264,14 @@ const handleSave = async () => {
       {/* Card 3: Recent Encryption Logs */}
       <div className="bg-[#0f172a]/60 rounded-[16px] p-6 shadow-lg shadow-black/10 border border-white/10">
         <h3 className="text-lg font-semibold text-white mb-4">Recent Encryption Logs</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Nhật ký mã hóa gần đây</h3>
         <div className="space-y-2 text-sm">
           {logs.map((log, index) => (
             <div key={index} className="py-2 px-3 rounded-lg hover:bg-white/5 transition-colors">
               <span className="text-slate-500">{log.time}</span>
               <span className="text-slate-300"> - {log.message}</span>
               <span className="text-slate-400"> Status: </span>
+                            <span className="text-slate-400"> Trạng thái: </span>
               <span className={`${getLogStatusColor(log.status)} font-medium`}>{log.status}</span>
               <span className="text-slate-400">.</span>
             </div>
@@ -280,6 +282,7 @@ const handleSave = async () => {
       {/* Footer */}
       <footer className="text-center py-6 text-slate-500 text-sm">
         <p>2025 CRT Encrypt. All right reserved.</p>
+        <p>2025 CRT Encrypt. Bảo lưu mọi quyền.</p>
       </footer>
 
       {/* Edit Modal */}
@@ -308,6 +311,7 @@ const handleSave = async () => {
             }}
           >
             <h3 style={{ marginBottom: 6, fontSize: 18, fontWeight: 700 }}>Edit Student Key</h3>
+                        <h3 style={{ marginBottom: 6, fontSize: 18, fontWeight: 700 }}>Chỉnh sửa khóa sinh viên</h3>
             <p
               style={{
                 fontSize: 12,
@@ -318,14 +322,16 @@ const handleSave = async () => {
               }}
             >
               Update key information for student
+                          Cập nhật thông tin khóa cho sinh viên
             </p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={labelStyle}>Faculty ID</label>
+                  <label style={labelStyle}>Mã khoa</label>
                   <input
-                    placeholder="Faculty ID"
+                    placeholder="Mã khoa"
                     value={form.facultyId}
                     onChange={(e) => handleChange("facultyId", e.target.value)}
                     style={{ ...inputStyle, width: "100%" }}
@@ -333,8 +339,9 @@ const handleSave = async () => {
                 </div>
                 <div>
                   <label style={labelStyle}>Class ID</label>
+                  <label style={labelStyle}>Mã lớp</label>
                   <input
-                    placeholder="Class ID"
+                    placeholder="Mã lớp"
                     value={form.classId}
                     onChange={(e) => handleChange("classId", e.target.value)}
                     style={{ ...inputStyle, width: "100%" }}
@@ -344,6 +351,7 @@ const handleSave = async () => {
 
               <div>
                 <label style={labelStyle}>Student ID</label>
+                                  <label style={labelStyle}>MSSV</label>
                 <input
                   value={form.studentId}
                   disabled
@@ -354,6 +362,7 @@ const handleSave = async () => {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={labelStyle}>Status</label>
+                  <label style={labelStyle}>Trạng thái</label>
                   <select
                     value={form.status}
                     onChange={(e) => handleChange("status", e.target.value)}
@@ -365,7 +374,7 @@ const handleSave = async () => {
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>Created Date</label>
+                  <label style={labelStyle}>Ngày tạo</label>
                   <input
                     type="date"
                     value={form.createdDate}
@@ -400,6 +409,8 @@ const handleSave = async () => {
                 }}
               >
                 Cancel
+                              Hủy
+                {isEdit ? "Lưu thay đổi" : "Thêm sinh viên"}
               </button>
               <button
                 onClick={handleSave}

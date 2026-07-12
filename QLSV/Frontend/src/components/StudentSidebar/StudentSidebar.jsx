@@ -48,19 +48,19 @@ function StudentSidebar() {
 
         <nav>
           <NavLink to="dashboard" style={linkStyle}>
-            Dashboard
+            Bảng điều khiển
           </NavLink>
 
           <NavLink to="academic" style={linkStyle}>
-            Academic
+            Học tập
           </NavLink>
 
           <NavLink to="personal-info" style={linkStyle}>
-            Personal Info
+            Thông tin cá nhân
           </NavLink>
 
           <NavLink to="encryption-key" style={linkStyle}>
-            My encryption key
+            Khóa mã hóa của tôi
           </NavLink>
         </nav>
 
@@ -84,7 +84,7 @@ function StudentSidebar() {
             }}
           >
             <i className="fa-solid fa-right-from-bracket"></i>
-            Logout
+            Đăng xuất
           </button>
         </div>
       </div>
@@ -118,7 +118,7 @@ function StudentSidebar() {
                 cursor: "pointer",
               }}
             >
-              Logout <i className="fa-solid fa-power-off" style={{ fontSize: "12px" }}></i>
+              Đăng xuất <i className="fa-solid fa-power-off" style={{ fontSize: "12px" }}></i>
             </button>
             <div
               style={{

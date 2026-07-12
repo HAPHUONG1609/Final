@@ -64,7 +64,7 @@ function PageHeader({ showLogout = true, showAvatar = true, navLinks = [] }) {
 
         {showLogout && (
           <button className="page-header__logout" onClick={handleLogout}>
-            Logout
+            Đăng xuất
           </button>
         )}
       </div>

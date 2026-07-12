@@ -14,7 +14,7 @@ function NotFoundPage() {
     { label: "Thông tin chung", to: "/student" },
     { label: "Học tập", to: "/Academic" },
     { label: "Đăng kí học phần", to: "#" },
-    { label: "Home", to: "/" },
+    { label: "Trang chủ", to: "/" },
   ];
 
   return (
@@ -25,14 +25,14 @@ function NotFoundPage() {
         <h1 className="error-page__title">
           <span className="error-page__code">404</span>
           <span className="error-page__divider">|</span>
-          <span className="error-page__text">Page Not Found</span>
+          <span className="error-page__text">Không tìm thấy trang</span>
         </h1>
 
         <button
           className="error-page__btn"
           onClick={() => navigate("/")}
         >
-          Go to Home Page
+          Về trang chủ
         </button>
       </main>
     </div>

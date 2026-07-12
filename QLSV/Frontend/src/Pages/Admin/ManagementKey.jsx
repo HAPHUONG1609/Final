@@ -5,7 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 const ITEMS_PER_PAGE = 5;
 
 function ManagementKey() {
-  // Faculty Keys data
+  // Dữ liệu khóa khoa
   const [facultyKeys, setFacultyKeys] = useState([
     {
       maKhoa: "CNTT", 
@@ -29,21 +29,21 @@ function ManagementKey() {
     },
   ]);
 
-  // Search & Filter
+  // Tìm kiếm & lọc
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  // Pagination
+  // Phân trang
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Modal
+  // Hộp thoại
   const [showModal, setShowModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [editForm, setEditForm] = useState({ maKhoa: "", tenKhoa: "", status: "Active" });
 
-  // Statistics
+  // Thống kê
   const stats = {
     totalFaculty: facultyKeys.length,
     activeKeys: facultyKeys.filter(f => f.status === "Active").length,
@@ -82,7 +82,7 @@ function ManagementKey() {
       );
 
     } catch (e) {
-      setErr(e.message || "Failed to load faculty");
+      setErr(e.message || "Không tải được danh sách khoa");
     } finally {
       setLoading(false);
     }
@@ -92,7 +92,7 @@ function ManagementKey() {
 }, []);
   
   const handleVerify = () => {
-    console.log("Verify key clicked");
+    console.log("Đã bấm xác minh khóa");
   };
 
   const openAddModal = () => {
@@ -233,7 +233,7 @@ function ManagementKey() {
   }
 };
 
-  // Filter function
+  // Hàm lọc
   const filteredData = facultyKeys.filter(item => {
     const matchSearch = 
       item.maKhoa.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -242,14 +242,14 @@ function ManagementKey() {
     return matchSearch && matchStatus;
   });
 
-  // Pagination calculations
+  // Tính toán phân trang
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
 
-  // Reset to page 1 when filter changes
+  // Đặt lại về trang 1 khi bộ lọc thay đổi
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, statusFilter]);
@@ -263,8 +263,8 @@ function ManagementKey() {
             <i className="fa-solid fa-key text-white text-2xl"></i>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Quản lý Khóa mã hóa CRT</h1>
-            <p className="text-slate-400 text-sm mt-1">Quản lý và giám sát các khóa mã hóa Chinese Remainder Theorem theo từng Khoa</p>
+            <h1 className="text-2xl font-bold text-white">Quản lý khóa mã hóa CRT</h1>
+            <p className="text-slate-400 text-sm mt-1">Quản lý và giám sát các khóa mã hóa Chinese Remainder Theorem theo từng khoa</p>
           </div>
         </div>
       </div>
@@ -279,7 +279,7 @@ function ManagementKey() {
             </div>
             <div>
               <span className="text-3xl font-bold text-white">{stats.totalFaculty}</span>
-              <p className="text-slate-400 text-sm">Tổng số Khoa</p>
+              <p className="text-slate-400 text-sm">Tổng số khoa</p>
             </div>
           </div>
 
@@ -307,7 +307,7 @@ function ManagementKey() {
 
       {/* Card 3: Faculty Keys Table */}
       <div className="bg-[#0f172a]/60 rounded-[16px] p-6 shadow-lg shadow-black/10 border border-white/10">
-        <h2 className="text-xl font-semibold text-blue-400" style={{ marginBottom: 16 }}>Danh sách Khóa theo Khoa</h2>
+        <h2 className="text-xl font-semibold text-blue-400" style={{ marginBottom: 16 }}>Danh sách khóa theo khoa</h2>
 
         {/* Search & Filter */}
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 20 }}>
@@ -327,8 +327,8 @@ function ManagementKey() {
             style={{ padding: "10px 14px", background: "rgba(30,41,59,0.7)", borderRadius: 12, color: "#e2e8f0", fontSize: 13, border: "1px solid rgba(255,255,255,0.07)", cursor: "pointer", outline: "none" }}
           >
             <option value="all">Tất cả trạng thái</option>
-            <option value="active">Active</option>
-            <option value="expired">Expired</option>
+            <option value="active">Hoạt động</option>
+            <option value="expired">Hết hạn</option>
           </select>
           <button
             onClick={openAddModal}
@@ -347,7 +347,7 @@ function ManagementKey() {
             }}
           >
             <i className="fa-solid fa-plus"></i>
-            Thêm Khoa
+            Thêm khoa
           </button>
           <span style={{ marginLeft: "auto", color: "#60a5fa", fontSize: 13, fontWeight: 600 }}>{filteredData.length} khoa</span>
         </div>
@@ -358,8 +358,8 @@ function ManagementKey() {
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", background: "rgba(15,23,42,0.6)" }}>
                 <th style={thStyle}>STT</th>
-                <th style={thStyle}>Mã Khoa</th>
-                <th style={thStyle}>Tên Khoa</th>
+                <th style={thStyle}>Mã khoa</th>
+                <th style={thStyle}>Tên khoa</th>
                 <th style={thStyle}>Trạng thái</th>
                 <th style={thStyle}>Thao tác</th>
               </tr>
@@ -468,7 +468,7 @@ function ManagementKey() {
             }}
           >
             <h3 style={{ marginBottom: 6, fontSize: 18, fontWeight: 700 }}>
-              {isEdit ? "Chỉnh sửa thông tin Khoa" : "Thêm Khoa mới"}
+              {isEdit ? "Chỉnh sửa thông tin khoa" : "Thêm khoa mới"}
             </h3>
             <p style={{ fontSize: 12, color: "#64748b", marginBottom: 24, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 16 }}>
               {isEdit ? "Cập nhật thông tin cho khoa" : "Nhập thông tin để thêm khoa mới"}
@@ -476,7 +476,7 @@ function ManagementKey() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
-                <label style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, display: "block", fontWeight: 500 }}>Mã Khoa</label>
+                <label style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, display: "block", fontWeight: 500 }}>Mã khoa</label>
                 <input
                   placeholder="VD: CNTT"
                   value={editForm.maKhoa}
@@ -487,7 +487,7 @@ function ManagementKey() {
               </div>
 
               <div>
-                <label style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, display: "block", fontWeight: 500 }}>Tên Khoa</label>
+                <label style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, display: "block", fontWeight: 500 }}>Tên khoa</label>
                 <input
                   placeholder="VD: Công nghệ thông tin"
                   value={editForm.tenKhoa}
@@ -503,8 +503,8 @@ function ManagementKey() {
                   onChange={(e) => handleEditChange("status", e.target.value)}
                   style={{ ...inputStyle, width: "100%" }}
                 >
-                  <option value="Active">Active</option>
-                  <option value="Expired">Expired</option>
+                  <option value="Active">Hoạt động</option>
+                  <option value="Expired">Hết hạn</option>
                 </select>
               </div>
             </div>
@@ -547,7 +547,7 @@ function ManagementKey() {
                   fontWeight: 600,
                 }}
               >
-                {isEdit ? "Lưu thay đổi" : "Thêm Khoa"}
+                {isEdit ? "Lưu thay đổi" : "Thêm khoa"}
               </button>
             </div>
           </div>
