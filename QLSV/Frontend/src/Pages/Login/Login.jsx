@@ -50,7 +50,7 @@ function Login() {
       if (Number(data.roleCode) === 1) {
         navigate("/admin/dashboard", { replace: true });
       } else if (Number(data.roleCode) === 0) {
-        navigate("/student/dashboard", { replace: true });
+        navigate("/teacher/dashboard", { replace: true });
       } else {
         setError("Tài khoản chưa được phân quyền");
       }
