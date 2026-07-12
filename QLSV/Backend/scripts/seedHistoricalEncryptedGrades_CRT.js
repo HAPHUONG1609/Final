@@ -43,7 +43,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const sql = require("msnodesqlv8");
+const sql = require("../utils/sqlClient");
 
 const SQL_SERVER = process.env.SQL_SERVER || "localhost\\SQLEXPRESS";
 const SQL_DATABASE = process.env.SQL_DATABASE || "QLSV_AT";

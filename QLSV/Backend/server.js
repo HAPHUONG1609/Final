@@ -1,6 +1,6 @@
 require("dotenv").config();
 const express = require("express");
-const sql = require("msnodesqlv8");
+const sql = require("./utils/sqlClient");
 const cors = require("cors");
 const session = require("express-session");
 
