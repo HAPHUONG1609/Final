@@ -93,7 +93,7 @@ export default function ManageStudentInformation() {
       setStudents(data);
     } catch (error) {
       console.error("fetchStudents error:", error);
-      alert(error.message);
+      alert("Tải danh sách sinh viên thất bại. Vui lòng kiểm tra kết nối máy chủ.");
     } finally {
       setLoading(false);
     }
@@ -119,7 +119,7 @@ export default function ManageStudentInformation() {
       setClasses(data);
     } catch (error) {
       console.error("fetchClasses error:", error);
-      alert(error.message);
+      alert("Tải danh sách lớp thất bại. Vui lòng kiểm tra kết nối máy chủ.");
     }
   };
 
@@ -143,7 +143,7 @@ export default function ManageStudentInformation() {
       setFacultiesData(data);
     } catch (error) {
       console.error("fetchFaculties error:", error);
-      alert(error.message);
+      alert("Tải danh sách khoa thất bại. Vui lòng kiểm tra kết nối máy chủ.");
     }
   };
 
@@ -273,12 +273,12 @@ export default function ManageStudentInformation() {
       alert(data.message || "Thành công");
     } catch (error) {
       console.error("handleSave error:", error);
-      alert(error.message);
+      alert("Lưu thông tin sinh viên thất bại. Vui lòng thử lại.");
     }
   };
 
   const handleDelete = async (studentId) => {
-    const ok = window.confirm(`Delete ${studentId}?`);
+    const ok = window.confirm(`Bạn có chắc muốn xóa sinh viên ${studentId} không?`);
     if (!ok) return;
 
     try {
@@ -305,7 +305,7 @@ export default function ManageStudentInformation() {
       alert(data.message || "Đã xóa");
     } catch (error) {
       console.error("handleDelete error:", error);
-      alert(error.message);
+      alert("Xóa sinh viên thất bại. Vui lòng thử lại.");
     }
   };
 
@@ -459,7 +459,11 @@ export default function ManageStudentInformation() {
 
               <div>
                 <Badge tone={r.keyStatus === "Generated" ? "info" : "neutral"}>
-                  {r.keyStatus}
+                  {r.keyStatus === "Generated"
+                    ? "Đã tạo"
+                    : r.keyStatus === "Not yet"
+                    ? "Chưa tạo"
+                    : r.keyStatus}
                 </Badge>
               </div>
 
@@ -665,8 +669,8 @@ export default function ManageStudentInformation() {
                 style={inputStyle}
                 disabled
               >
-                <option value="Generated">Generated</option>
-                <option value="Not yet">Not yet</option>
+                <option value="Generated">Đã tạo</option>
+                <option value="Not yet">Chưa tạo</option>
               </select>
             </div>
 

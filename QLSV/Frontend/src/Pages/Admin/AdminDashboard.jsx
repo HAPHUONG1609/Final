@@ -72,7 +72,7 @@ function AdminDashboard() {
       setStudentKeys(mappedStudents);
     } catch (error) {
       console.error("fetchRandomStudents error:", error);
-      alert(error.message);
+      alert("Tải dữ liệu thất bại. Vui lòng kiểm tra kết nối máy chủ.");
     }
   };
 
@@ -121,7 +121,7 @@ const handleSave = async () => {
 };
 
   const handleDelete = (studentId) => {
-    const ok = window.confirm(`Delete student key for "${studentId}"?`);
+    const ok = window.confirm(`Bạn có chắc muốn xóa khóa của sinh viên "${studentId}" không?`);
     if (!ok) return;
     setStudentKeys((prev) => prev.filter((item) => item.studentId !== studentId));
   };
@@ -270,9 +270,15 @@ const handleSave = async () => {
             <div key={index} className="py-2 px-3 rounded-lg hover:bg-white/5 transition-colors">
               <span className="text-slate-500">{log.time}</span>
               <span className="text-slate-300"> - {log.message}</span>
-              <span className="text-slate-400"> Status: </span>
+              <span className="text-slate-400"> Trạng thái: </span>
                             <span className="text-slate-400"> Trạng thái: </span>
-              <span className={`${getLogStatusColor(log.status)} font-medium`}>{log.status}</span>
+              <span className={`${getLogStatusColor(log.status)} font-medium`}>{log.status === "Success"
+  ? "Thành công"
+  : log.status === "Error"
+  ? "Lỗi"
+  : log.status === "Info"
+  ? "Thông tin"
+  : log.status}</span>
               <span className="text-slate-400">.</span>
             </div>
           ))}
@@ -310,7 +316,7 @@ const handleSave = async () => {
               boxShadow: "0 25px 60px rgba(0,0,0,0.5)",
             }}
           >
-            <h3 style={{ marginBottom: 6, fontSize: 18, fontWeight: 700 }}>Edit Student Key</h3>
+            <h3 style={{ marginBottom: 6, fontSize: 18, fontWeight: 700 }}>Chỉnh sửa khóa sinh viên</h3>
                         <h3 style={{ marginBottom: 6, fontSize: 18, fontWeight: 700 }}>Chỉnh sửa khóa sinh viên</h3>
             <p
               style={{
@@ -328,7 +334,7 @@ const handleSave = async () => {
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <label style={labelStyle}>Faculty ID</label>
+                  <label style={labelStyle}>Mã khoa</label>
                   <label style={labelStyle}>Mã khoa</label>
                   <input
                     placeholder="Mã khoa"
@@ -338,7 +344,7 @@ const handleSave = async () => {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Class ID</label>
+                  <label style={labelStyle}>Mã lớp</label>
                   <label style={labelStyle}>Mã lớp</label>
                   <input
                     placeholder="Mã lớp"
@@ -350,7 +356,7 @@ const handleSave = async () => {
               </div>
 
               <div>
-                <label style={labelStyle}>Student ID</label>
+                <label style={labelStyle}>Mã sinh viên</label>
                                   <label style={labelStyle}>MSSV</label>
                 <input
                   value={form.studentId}
@@ -361,7 +367,7 @@ const handleSave = async () => {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <label style={labelStyle}>Status</label>
+                  <label style={labelStyle}>Trạng thái</label>
                   <label style={labelStyle}>Trạng thái</label>
                   <select
                     value={form.status}
