@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import "./Login.css";
 import Scur from "../../assets/icon/scurity.png";
+import { API_BASE, clearAuthStorage } from "../../utils/auth.js";
 
 function Login() {
   const [credentials, setCredentials] = useState({ identifier: '', password: '' });
@@ -29,7 +30,9 @@ function Login() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:3000/login", {
+      clearAuthStorage();
+
+      const res = await fetch(`${API_BASE}/login`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

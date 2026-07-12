@@ -3,6 +3,23 @@ const sql = require("msnodesqlv8");
 const cors = require("cors");
 const session = require("express-session");
 
+const SESSION_COOKIE_NAME = "qlsv.sid";
+const SESSION_COOKIE_SECURE =
+  String(process.env.SESSION_COOKIE_SECURE || "").toLowerCase() === "true";
+const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: SESSION_COOKIE_SECURE,
+  sameSite: SESSION_COOKIE_SECURE ? "none" : "lax",
+  path: "/",
+  maxAge: 8 * 60 * 60 * 1000,
+};
+const SESSION_CLEAR_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: SESSION_COOKIE_SECURE,
+  sameSite: SESSION_COOKIE_SECURE ? "none" : "lax",
+  path: "/",
+};
+
 const path = require("path");
 const crypto = require("crypto"); // Dùng để mã hóa/giải mã AES
   //Thêm vào để load được sinh viên trong quá trình nhập điểm, và gọi Java API cho CRT, nếu không thêm, quá trình gọi điểm sẽ bị chặn
@@ -110,6 +127,43 @@ function getAuthUser(req) {
     roleName,
     username: user.username || user.user || "",
   };
+}
+
+function requireSession(req, res, next) {
+  if (!req.session?.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Phiên đăng nhập đã hết hạn hoặc bạn chưa đăng nhập",
+      code: "UNAUTHORIZED",
+    });
+  }
+  next();
+}
+
+function clearSessionCookies(res) {
+  res.clearCookie(SESSION_COOKIE_NAME, SESSION_CLEAR_COOKIE_OPTIONS);
+  // Xóa luôn cookie mặc định cũ để tránh còn phiên từ bản code trước.
+  res.clearCookie("connect.sid", { path: "/" });
+}
+
+function handleLogout(req, res) {
+  if (!req.session) {
+    clearSessionCookies(res);
+    return res.json({ success: true, message: "Đăng xuất thành công" });
+  }
+
+  req.session.destroy((err) => {
+    if (err) {
+      console.error("Lỗi hủy session khi đăng xuất:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Không thể đăng xuất, vui lòng thử lại",
+      });
+    }
+
+    clearSessionCookies(res);
+    return res.json({ success: true, message: "Đăng xuất thành công" });
+  });
 }
 
 /* ==================== HELPER ASYNC + CRT GRADE SERVICE ==================== */
@@ -1174,10 +1228,11 @@ app.use(
 app.use(express.json());
 app.use(
   session({
-    secret: "your-session-secret",
+    name: SESSION_COOKIE_NAME,
+    secret: process.env.SESSION_SECRET || "qlsv-crt-session-secret-change-me",
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false },
+    cookie: SESSION_COOKIE_OPTIONS,
   }),
 );
 
@@ -1282,17 +1337,55 @@ app.post("/login", (req, res) => {
       }
     );
 
-    return res.json({
-      success: true,
-      message: "Đăng nhập thành công",
-      username: tk.USERNAME,
-      role: roleRaw,
-      roleCode: roleCode,
-      id: tk.RELATED_ID,
-      redirectUrl: redirectUrl,
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error("Lỗi lưu session đăng nhập:", saveErr);
+        return res.status(500).json({
+          success: false,
+          message: "Không thể tạo phiên đăng nhập",
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Đăng nhập thành công",
+        username: tk.USERNAME,
+        role: roleRaw,
+        roleCode: roleCode,
+        id: tk.RELATED_ID,
+        redirectUrl: redirectUrl,
+      });
     });
   });
 });
+
+// Đăng xuất cho mọi vai trò: ADMIN, GIANGVIEN và SINHVIEN.
+app.post("/logout", handleLogout);
+app.post("/auth/logout", handleLogout);
+
+// Frontend gọi API này trước khi cho phép mở route được bảo vệ.
+app.get("/auth/me", requireSession, (req, res) => {
+  const auth = getAuthUser(req);
+  return res.json({
+    authenticated: true,
+    user: {
+      username: auth.username,
+      role: auth.roleName,
+      relatedId: auth.relatedId,
+      roleCode: auth.isStudent ? 0 : 1,
+    },
+  });
+});
+
+// Tất cả API nghiệp vụ phía dưới đều bắt buộc phải còn session đăng nhập.
+// Chỉ chừa health check và API nội bộ crypto dùng giữa các service.
+app.use((req, res, next) => {
+  if (req.path === "/" || req.path.startsWith("/internal/crypto/")) {
+    return next();
+  }
+  return requireSession(req, res, next);
+});
+
 // API lấy lịch sử đăng nhập: dùng ở Dashboard sinh viên
 app.get("/api/login-history", (req, res) => {
   if (!req.session?.user) {

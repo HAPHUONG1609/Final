@@ -1,17 +1,105 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
+import {
+  clearAuthStorage,
+  getCurrentSession,
+  normalizeRole,
+} from "../utils/auth.js";
 
-export default function RequireAuth() {
-  const token = localStorage.getItem("token");
-  const loc = useLocation();
-  if (!token) {
-    return <Navigate to="/login" replace state={{ from: loc }} />;
+export default function RequireAuth({ allowedRoles = [] }) {
+  const location = useLocation();
+  const [authState, setAuthState] = useState({
+    status: "checking",
+    role: "",
+  });
+
+  const allowedRolesKey = useMemo(
+    () => allowedRoles.map(normalizeRole).sort().join("|"),
+    [allowedRoles]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const verifySession = async () => {
+      setAuthState({ status: "checking", role: "" });
+
+      try {
+        const data = await getCurrentSession();
+        const user = data?.user || {};
+        const role = normalizeRole(user.role || user.roleName);
+
+        if (!role) {
+          throw new Error("INVALID_SESSION_ROLE");
+        }
+
+        localStorage.setItem("role", role);
+        localStorage.setItem("username", String(user.username || ""));
+        localStorage.setItem("roleCode", role === "SINHVIEN" ? "0" : "1");
+
+        const acceptedRoles = allowedRolesKey
+          ? allowedRolesKey.split("|")
+          : [];
+
+        if (acceptedRoles.length > 0 && !acceptedRoles.includes(role)) {
+          if (!cancelled) {
+            setAuthState({ status: "forbidden", role });
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setAuthState({ status: "authenticated", role });
+        }
+      } catch (_error) {
+        clearAuthStorage();
+        if (!cancelled) {
+          setAuthState({ status: "unauthenticated", role: "" });
+        }
+      }
+    };
+
+    verifySession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allowedRolesKey, location.pathname]);
+
+  if (authState.status === "checking") {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f8fafc",
+          fontFamily: "sans-serif",
+        }}
+      >
+        Đang kiểm tra phiên đăng nhập...
+      </div>
+    );
   }
-  return <Outlet />;
-}
 
-export function RedirectIfAuthed() {
-  const token = localStorage.getItem("token");
-  if (token) return <Navigate to="/dashboard" replace />;
+  if (authState.status === "unauthenticated") {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location.pathname }}
+      />
+    );
+  }
+
+  if (authState.status === "forbidden") {
+    const home =
+      authState.role === "SINHVIEN"
+        ? "/student/dashboard"
+        : "/admin/dashboard";
+    return <Navigate to={home} replace />;
+  }
+
   return <Outlet />;
 }

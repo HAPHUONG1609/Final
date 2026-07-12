@@ -3,30 +3,17 @@ import "./Navbar.css";
 import Scur from "../../assets/icon/scurity.png";
 import Avt from "../../assets/icon/user.png";
 import { useNavigate, Outlet, NavLink } from "react-router-dom";
+import { logoutSession } from "../../utils/auth.js";
 
 function Navbar() {
   const navigate = useNavigate();
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
-
   const onLogout = async () => {
     try {
-      // Gọi API backend để xóa cookie đăng nhập
-      const res = await fetch(`${API_BASE}/auth/logout`, {
-        method: "POST",
-        credentials: "include", // quan trọng để gửi cookie
-      });
-
-      if (!res.ok) throw new Error("Logout failed");
-
-      // Xóa localStorage (nếu có lưu thông tin user)
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-
-      // Điều hướng về trang đăng nhập
+      await logoutSession();
       navigate("/login", { replace: true });
     } catch (err) {
       console.error("Logout error:", err);
-      alert("Không thể đăng xuất. Vui lòng thử lại.");
+      alert("Không thể đăng xuất. Vui lòng kiểm tra backend và thử lại.");
     }
   };
 
