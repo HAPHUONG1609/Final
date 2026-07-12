@@ -74,6 +74,33 @@ function EncryptionKey() {
     fetchPinChangeHistory();
   }, []);
 
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const pollPinChangeJob = async (jobId) => {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      await wait(2000);
+
+      const res = await fetch(`${API_BASE}/api/pin-change-jobs/${jobId}`, {
+        method: "GET",
+        credentials: "include"
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Không tải được trạng thái đổi PIN");
+      }
+
+      if (data.status === "completed") return data;
+      if (data.status === "failed") {
+        throw new Error(data.message || data.error || "Đổi PIN thất bại");
+      }
+
+      setMsg(data.message || "Đang mã hóa lại điểm CRT ở nền...");
+    }
+
+    throw new Error("Đổi PIN vẫn đang xử lý. Vui lòng tải lại trang để kiểm tra sau.");
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setMsg("");
@@ -116,7 +143,13 @@ function EncryptionKey() {
         return;
       }
 
-      setMsg(data.message || "Cập nhật PIN thành công!");
+      if (data.async && data.jobId) {
+        setMsg(data.message || "Đang mã hóa lại điểm CRT ở nền...");
+        const done = await pollPinChangeJob(data.jobId);
+        setMsg(done.message || "Cập nhật PIN thành công!");
+      } else {
+        setMsg(data.message || "Cập nhật PIN thành công!");
+      }
 
       setForm({
         current: "",
@@ -128,7 +161,7 @@ function EncryptionKey() {
       setLoading(false);
     } catch (error) {
       console.error(error);
-      setMsg("Lỗi server khi đổi PIN");
+      setMsg(error.message || "Lỗi server khi đổi PIN");
       setLoading(false);
     }
   };

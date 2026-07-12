@@ -162,7 +162,7 @@ function AdminEncryptionKey() {
       setLoading(false);
     } catch (error) {
       console.error(error);
-      setMsg("Lỗi server khi đổi PIN giảng viên");
+      setMsg(error.message || "Lỗi server khi đổi PIN giảng viên");
       setLoading(false);
     }
   };

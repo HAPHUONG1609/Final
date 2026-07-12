@@ -664,13 +664,15 @@ async function applyTeacherPinChangeTransaction({
 
 const TEACHER_PIN_CHANGE_JOBS = new Map();
 const ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV = new Map();
+const STUDENT_PIN_CHANGE_JOBS = new Map();
+const ACTIVE_STUDENT_PIN_CHANGE_BY_MSSV = new Map();
 const TEACHER_PIN_CHANGE_JOB_TTL_MS = 60 * 60 * 1000;
 
 function createTeacherPinChangeJobId() {
   return `teacher-pin-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
 }
 
-function serializeTeacherPinChangeJob(job) {
+function serializePinChangeJob(job) {
   if (!job) return null;
   return {
     success: job.status === "completed",
@@ -723,12 +725,14 @@ function startTeacherPinChangeJob({ maGv, username, currentPin, newPin }) {
       job.updatedAt = new Date().toISOString();
       job.message = "Đang giải mã điểm cũ và mã hóa lại theo PIN mới.";
 
-      const newTeacherPublicKey = await calculatePublicKeyFromPin(newPin);
-      const prepared = await prepareReEncryptTeacherGradesAfterPinChange({
-        maGv: normalizedMaGv,
-        currentPin,
-        newPin,
-      });
+      const [newTeacherPublicKey, prepared] = await Promise.all([
+        calculatePublicKeyFromPin(newPin),
+        prepareReEncryptTeacherGradesAfterPinChange({
+          maGv: normalizedMaGv,
+          currentPin,
+          newPin,
+        }),
+      ]);
 
       job.reEncryptedGrades = prepared.updates.length;
       job.repairedStudentPublicKeys = prepared.studentPublicKeyRepairs.size;
@@ -761,6 +765,139 @@ function startTeacherPinChangeJob({ maGv, username, currentPin, newPin }) {
     } finally {
       if (ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV.get(normalizedMaGv) === job.id) {
         ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV.delete(normalizedMaGv);
+      }
+    }
+  });
+
+  return job;
+}
+
+function getActiveTeacherPinChangeJob(maGv) {
+  const normalizedMaGv = String(maGv || "").trim().toUpperCase();
+  const jobId = ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV.get(normalizedMaGv);
+  const job = jobId ? TEACHER_PIN_CHANGE_JOBS.get(jobId) : null;
+  return job && ["queued", "running"].includes(job.status) ? job : null;
+}
+
+function getActiveStudentPinChangeJob(mssv) {
+  const normalizedMssv = String(mssv || "").trim().toUpperCase();
+  const jobId = ACTIVE_STUDENT_PIN_CHANGE_BY_MSSV.get(normalizedMssv);
+  const job = jobId ? STUDENT_PIN_CHANGE_JOBS.get(jobId) : null;
+  return job && ["queued", "running"].includes(job.status) ? job : null;
+}
+
+async function findActiveStudentPinJobForTeacher(maGv) {
+  if (ACTIVE_STUDENT_PIN_CHANGE_BY_MSSV.size === 0) return null;
+
+  const rows = await queryAsync(
+    `
+      SELECT DISTINCT LTRIM(RTRIM(MASV)) AS MASV
+      FROM dbo.DIEM_CRT
+      WHERE UPPER(LTRIM(RTRIM(MAGV))) = UPPER(?)
+    `,
+    [maGv]
+  );
+
+  for (const row of rows) {
+    const job = getActiveStudentPinChangeJob(row.MASV);
+    if (job) return job;
+  }
+  return null;
+}
+
+async function findActiveTeacherPinJobForStudent(mssv) {
+  if (ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV.size === 0) return null;
+
+  const rows = await queryAsync(
+    `
+      SELECT DISTINCT LTRIM(RTRIM(MAGV)) AS MAGV
+      FROM dbo.DIEM_CRT
+      WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
+    `,
+    [mssv]
+  );
+
+  for (const row of rows) {
+    const job = getActiveTeacherPinChangeJob(row.MAGV);
+    if (job) return job;
+  }
+  return null;
+}
+
+function rememberStudentPinChangeJob(job) {
+  STUDENT_PIN_CHANGE_JOBS.set(job.id, job);
+  const cleanupTimer = setTimeout(() => {
+    STUDENT_PIN_CHANGE_JOBS.delete(job.id);
+  }, TEACHER_PIN_CHANGE_JOB_TTL_MS);
+  if (typeof cleanupTimer.unref === "function") cleanupTimer.unref();
+}
+
+function startStudentPinChangeJob({ mssv, username, currentPin, newPin }) {
+  const normalizedMssv = String(mssv || "").trim().toUpperCase();
+  const job = {
+    id: `student-pin-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`,
+    mssv: normalizedMssv,
+    username,
+    status: "queued",
+    step: "queued",
+    message: "Đã nhận yêu cầu đổi PIN. Hệ thống đang chuẩn bị mã hóa lại điểm CRT.",
+    reEncryptedGrades: 0,
+    repairedStudentPublicKeys: 0,
+    error: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    finishedAt: null,
+  };
+
+  rememberStudentPinChangeJob(job);
+  ACTIVE_STUDENT_PIN_CHANGE_BY_MSSV.set(normalizedMssv, job.id);
+
+  setImmediate(async () => {
+    try {
+      job.status = "running";
+      job.step = "prepare";
+      job.updatedAt = new Date().toISOString();
+      job.message = "Đang giải mã điểm cũ và mã hóa lại theo PIN mới.";
+
+      const [newPublicKey, gradeUpdates] = await Promise.all([
+        calculatePublicKeyFromPin(newPin),
+        prepareReEncryptStudentGradesAfterPinChange({
+          mssv: normalizedMssv,
+          currentPin,
+          newPin,
+        }),
+      ]);
+
+      job.reEncryptedGrades = gradeUpdates.length;
+      job.step = "commit";
+      job.updatedAt = new Date().toISOString();
+      job.message = "Đang ghi PIN mới và điểm CRT mới vào database.";
+
+      await applyStudentPinChangeTransaction({
+        mssv: normalizedMssv,
+        username,
+        currentPin,
+        newPin,
+        newPublicKey,
+        gradeUpdates,
+      });
+
+      job.status = "completed";
+      job.step = "done";
+      job.message = "Đổi PIN sinh viên thành công. Các điểm cũ đã được mã hóa lại và PIN mới đã có hiệu lực.";
+      job.finishedAt = new Date().toISOString();
+      job.updatedAt = job.finishedAt;
+    } catch (error) {
+      console.error("Lỗi job đổi PIN sinh viên:", error);
+      job.status = "failed";
+      job.step = "failed";
+      job.error = error.message || "Không thể đổi PIN";
+      job.message = "Không thể đổi PIN: " + job.error;
+      job.finishedAt = new Date().toISOString();
+      job.updatedAt = job.finishedAt;
+    } finally {
+      if (ACTIVE_STUDENT_PIN_CHANGE_BY_MSSV.get(normalizedMssv) === job.id) {
+        ACTIVE_STUDENT_PIN_CHANGE_BY_MSSV.delete(normalizedMssv);
       }
     }
   });
@@ -909,21 +1046,30 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
   const gradeRows = await queryAsync(
     `
       SELECT
-        LTRIM(RTRIM(MASV)) AS MASV,
-        LTRIM(RTRIM(MAHP)) AS MAHP,
-        LTRIM(RTRIM(MAGV)) AS MAGV,
-        C,
-        MAKHOA_CRT,
-        MALOP_CRT
-      FROM DIEM_CRT
-      WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
+        LTRIM(RTRIM(d.MASV)) AS MASV,
+        LTRIM(RTRIM(d.MAHP)) AS MAHP,
+        LTRIM(RTRIM(d.MAGV)) AS MAGV,
+        d.C,
+        d.MAKHOA_CRT,
+        d.MALOP_CRT,
+        gv.PUBLIC_KEY AS TeacherPublicKey
+      FROM DIEM_CRT d
+      LEFT JOIN GIANG_VIEN gv
+        ON UPPER(LTRIM(RTRIM(gv.MaGV))) = UPPER(LTRIM(RTRIM(d.MAGV)))
+      WHERE UPPER(LTRIM(RTRIM(d.MASV))) = UPPER(?)
     `,
     [mssv]
   );
 
-  const updates = [];
+  const getCachedPrimesByRange = createPrimeRangeCache();
+  console.log(
+    `[PIN] Sinh vien ${mssv}: chuan bi ma hoa lai ${gradeRows.length} diem, concurrency=${PIN_REENCRYPT_CONCURRENCY}`
+  );
 
-  for (const row of gradeRows) {
+  const updates = await mapWithConcurrency(
+    gradeRows,
+    PIN_REENCRYPT_CONCURRENCY,
+    async (row) => {
     const maHp = String(row.MAHP || "").trim();
     const maGv = String(row.MAGV || "").trim();
     const oldC = String(row.C || "").trim();
@@ -932,23 +1078,10 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
       throw new Error(`DIEM_CRT thiếu MAHP/MAGV/C cho sinh viên ${mssv}`);
     }
 
-    const gvRows = await queryAsync(
-      `
-        SELECT LTRIM(RTRIM(MaGV)) AS MaGV, PUBLIC_KEY
-        FROM GIANG_VIEN
-        WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
-      `,
-      [maGv]
-    );
-
-    if (!gvRows || gvRows.length === 0) {
-      throw new Error(`Không tìm thấy giảng viên ${maGv} khi đổi PIN`);
-    }
-
-    const gvPublicKey = String(gvRows[0].PUBLIC_KEY || "").trim();
+    const gvPublicKey = String(row.TeacherPublicKey || "").trim();
 
     if (!gvPublicKey) {
-      throw new Error(`Giảng viên ${maGv} chưa có PUBLIC_KEY`);
+      throw new Error(`Không tìm thấy giảng viên ${maGv} hoặc giảng viên chưa có PUBLIC_KEY`);
     }
 
     // Bước 1: giải mã C hiện tại bằng PIN cũ của sinh viên.
@@ -967,6 +1100,7 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
       mssv,
       C: oldC,
       ranges: [derivedOldRange],
+      getPrimes: getCachedPrimesByRange,
     });
     const plaintext = decryptedOld.plaintext;
     const oldRange = decryptedOld.range;
@@ -982,7 +1116,7 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
       publicKey: gvPublicKey,
       pin: newPin,
     });
-    const newPrimes = await getPrimesByRange(newRange.startIndex, newRange.endIndex);
+    const newPrimes = await getCachedPrimesByRange(newRange.startIndex, newRange.endIndex);
     const newC = await encryptGradeCrt({ mssv, plaintext, primes: newPrimes });
     const verifiedPlaintext = await decryptGradeCrt({ mssv, C: newC, primes: newPrimes });
 
@@ -990,7 +1124,7 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
       throw new Error(`Kiểm tra mã hóa lại thất bại tại ${mssv}-${maHp}`);
     }
 
-    updates.push({
+    return {
       maHp,
       maGv,
       oldC,
@@ -998,8 +1132,11 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
       plaintext,
       oldRange,
       newRange,
-    });
-  }
+    };
+    }
+  );
+
+  console.log(`[PIN] Sinh vien ${mssv}: da chuan bi xong ${updates.length} diem`);
 
   return updates;
 }
@@ -1770,16 +1907,20 @@ app.get("/api/pin-change-jobs/:jobId", (req, res) => {
     return res.status(401).json({ message: "Chưa đăng nhập" });
   }
 
-  const job = TEACHER_PIN_CHANGE_JOBS.get(String(req.params.jobId || "").trim());
+  const jobId = String(req.params.jobId || "").trim();
+  const job = TEACHER_PIN_CHANGE_JOBS.get(jobId) || STUDENT_PIN_CHANGE_JOBS.get(jobId);
   if (!job) {
     return res.status(404).json({ message: "Không tìm thấy tiến trình đổi PIN" });
   }
 
-  if (!auth.isTeacher || String(auth.relatedId || "").trim().toUpperCase() !== job.maGv) {
+  const relatedId = String(auth.relatedId || "").trim().toUpperCase();
+  const canViewTeacherJob = auth.isTeacher && relatedId === job.maGv;
+  const canViewStudentJob = auth.isStudent && relatedId === job.mssv;
+  if (!canViewTeacherJob && !canViewStudentJob) {
     return res.status(403).json({ message: "Không có quyền xem tiến trình đổi PIN này" });
   }
 
-  return res.json(serializeTeacherPinChangeJob(job));
+  return res.json(serializePinChangeJob(job));
 });
 
 
@@ -1832,12 +1973,18 @@ app.post("/api/set-pin", async (req, res) => {
         return res.status(401).json({ message: "PIN hiện tại không đúng" });
       }
 
-      const activeJobId = ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV.get(maGv.toUpperCase());
-      const activeJob = activeJobId ? TEACHER_PIN_CHANGE_JOBS.get(activeJobId) : null;
-      if (activeJob && ["queued", "running"].includes(activeJob.status)) {
+      const activeJob = getActiveTeacherPinChangeJob(maGv);
+      if (activeJob) {
         return res.status(202).json({
-          ...serializeTeacherPinChangeJob(activeJob),
+          ...serializePinChangeJob(activeJob),
           message: "Đang có một yêu cầu đổi PIN đang xử lý. Vui lòng chờ tiến trình hiện tại hoàn tất.",
+        });
+      }
+
+      const conflictingStudentJob = await findActiveStudentPinJobForTeacher(maGv);
+      if (conflictingStudentJob) {
+        return res.status(423).json({
+          message: `Sinh viên ${conflictingStudentJob.mssv} đang đổi PIN trên dữ liệu liên quan. Vui lòng chờ hoàn tất rồi thử lại.`,
         });
       }
 
@@ -1849,7 +1996,7 @@ app.post("/api/set-pin", async (req, res) => {
       });
 
       return res.status(202).json({
-        ...serializeTeacherPinChangeJob(job),
+        ...serializePinChangeJob(job),
         message: "Đã nhận yêu cầu đổi PIN. Hệ thống đang mã hóa lại điểm CRT ở nền.",
       });
     }
@@ -1864,26 +2011,31 @@ app.post("/api/set-pin", async (req, res) => {
       return res.status(401).json({ message: "PIN hiện tại không đúng" });
     }
 
-    const gradeUpdates = await prepareReEncryptStudentGradesAfterPinChange({
-      mssv,
-      currentPin,
-      newPin,
-    });
-    const newPublicKey = await calculatePublicKeyFromPin(newPin);
+    const activeJob = getActiveStudentPinChangeJob(mssv);
+    if (activeJob) {
+      return res.status(202).json({
+        ...serializePinChangeJob(activeJob),
+        message: "Đang có một yêu cầu đổi PIN đang xử lý. Vui lòng chờ tiến trình hiện tại hoàn tất.",
+      });
+    }
 
-    await applyStudentPinChangeTransaction({
+    const conflictingTeacherJob = await findActiveTeacherPinJobForStudent(mssv);
+    if (conflictingTeacherJob) {
+      return res.status(423).json({
+        message: `Giảng viên ${conflictingTeacherJob.maGv} đang đổi PIN trên dữ liệu liên quan. Vui lòng chờ hoàn tất rồi thử lại.`,
+      });
+    }
+
+    const job = startStudentPinChangeJob({
       mssv,
       username,
       currentPin,
       newPin,
-      newPublicKey,
-      gradeUpdates,
     });
 
-    return res.json({
-      success: true,
-      message: "Cập nhật mã PIN thành công. Các điểm cũ đã được mã hóa lại để dùng PIN mới giải mã.",
-      reEncryptedGrades: gradeUpdates.length,
+    return res.status(202).json({
+      ...serializePinChangeJob(job),
+      message: "Đã nhận yêu cầu đổi PIN. Hệ thống đang mã hóa lại điểm CRT ở nền.",
     });
   } catch (err) {
     console.error("Lỗi cập nhật PIN:", err);
@@ -1933,6 +2085,15 @@ app.post("/admin/nhap-diem", async (req, res) => {
       });
     }
 
+    const activeTeacherPinJob = getActiveTeacherPinChangeJob(auth.relatedId);
+    if (activeTeacherPinJob) {
+      return res.status(423).json({
+        message: "Giảng viên đang đổi PIN. Vui lòng chờ hoàn tất trước khi mã hóa điểm.",
+        pinChangeJobId: activeTeacherPinJob.id,
+        pinChangeStatus: activeTeacherPinJob.status,
+      });
+    }
+
     console.log("========== API /admin/nhap-diem ==========");
     console.log("BODY:", req.body);
     console.log("SESSION:", req.session);
@@ -1967,6 +2128,21 @@ app.post("/admin/nhap-diem", async (req, res) => {
     if (!/^\d+$/.test(pin)) {
       return res.status(400).json({
         message: "PIN giảng viên phải là số"
+      });
+    }
+
+    const rotatingStudent = grades
+      .map((grade) => String(
+        grade.MaSV || grade.MASV || grade.maSv || grade.mssv || grade.MSSV || ""
+      ).trim())
+      .find((mssv) => getActiveStudentPinChangeJob(mssv));
+
+    if (rotatingStudent) {
+      const activeStudentPinJob = getActiveStudentPinChangeJob(rotatingStudent);
+      return res.status(423).json({
+        message: `Sinh viên ${rotatingStudent} đang đổi PIN. Vui lòng chờ hoàn tất trước khi mã hóa điểm.`,
+        pinChangeJobId: activeStudentPinJob.id,
+        pinChangeStatus: activeStudentPinJob.status,
       });
     }
 
@@ -2627,6 +2803,15 @@ app.post("/api/view-grades", async (req, res) => {
     const mssvClean = mssv.trim();
     const courseIdClean = courseId.trim();
 
+    const activeStudentPinJob = getActiveStudentPinChangeJob(mssvClean);
+    if (activeStudentPinJob) {
+      return res.status(423).json({
+        message: "PIN đang được thay đổi. Vui lòng chờ hoàn tất trước khi giải mã điểm.",
+        pinChangeJobId: activeStudentPinJob.id,
+        pinChangeStatus: activeStudentPinJob.status,
+      });
+    }
+
     console.log("MSSV GIẢI MÃ:", mssvClean);
     console.log("MAHP GIẢI MÃ:", courseIdClean);
 
@@ -2661,6 +2846,15 @@ app.post("/api/view-grades", async (req, res) => {
 
     const C = String(diemRows[0].C || "").trim();
     const maGv = String(diemRows[0].MAGV || "").trim();
+
+    const activeTeacherPinJob = getActiveTeacherPinChangeJob(maGv);
+    if (activeTeacherPinJob) {
+      return res.status(423).json({
+        message: "Giảng viên đang đổi PIN cho dữ liệu môn học này. Vui lòng chờ hoàn tất trước khi giải mã điểm.",
+        pinChangeJobId: activeTeacherPinJob.id,
+        pinChangeStatus: activeTeacherPinJob.status,
+      });
+    }
 
     if (!C) {
       return res.status(500).json({
