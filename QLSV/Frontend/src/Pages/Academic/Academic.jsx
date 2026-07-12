@@ -129,7 +129,7 @@ function Academic() {
           credentials: "include",
         });
 
-        if (!res.ok) throw new Error("Failed to load years");
+        if (!res.ok) throw new Error("Không tải được danh sách năm học");
 
         const data = await res.json();
 
@@ -191,7 +191,7 @@ function Academic() {
           credentials: "include",
         });
 
-        if (!res.ok) throw new Error("Failed to load semesters");
+        if (!res.ok) throw new Error("Không tải được danh sách học kỳ");
 
         const data = await res.json();
         const cleanSemesters = (data || [])
@@ -235,7 +235,7 @@ function Academic() {
           credentials: "include",
         });
 
-        if (!res.ok) throw new Error("Failed to load courses");
+        if (!res.ok) throw new Error("Không tải được danh sách học phần");
 
         const data = await res.json();
 
@@ -440,7 +440,7 @@ function Academic() {
           <div className="hero__content">
             <img src={Student} alt="" className="hero__icon" />
             <h1 className="hero__title">
-              My Academic <br /> Records
+              Kết quả <br /> học tập của tôi
             </h1>
           </div>
 
@@ -452,7 +452,7 @@ function Academic() {
 
         <div className="hero__right">
           <label htmlFor="pin" className="pin__label">
-            Secure PIN
+            Mã PIN an toàn
           </label>
 
           <div className="pin__field">
@@ -478,7 +478,7 @@ function Academic() {
         <div className="sec__header">
           <div className="sec__title">
             <i className="fa-regular fa-clipboard" aria-hidden="true" />
-            {decrypted ? "Kết quả giải mã điểm" : "Course Performance Overview"}
+            {decrypted ? "Kết quả giải mã điểm" : "Tổng quan kết quả học tập"}
           </div>
 
           <div className="filters">
@@ -504,7 +504,7 @@ function Academic() {
               <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
               <input
                 type="text"
-                placeholder="Search by course code or name..."
+                placeholder="Tìm theo mã học phần hoặc tên học phần..."
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
@@ -521,11 +521,11 @@ function Academic() {
             <table>
               <thead>
                 <tr>
-                  <th>MAHP</th>
-                  <th>TenHP</th>
-                  <th>SoTinChi</th>
-                  {!decrypted && <th>MaLop</th>}
-                  {!decrypted && <th>LichHoc</th>}
+                  <th>Mã HP</th>
+                  <th>Tên HP</th>
+                  <th>Số tín chỉ</th>
+                  {!decrypted && <th>Mã lớp</th>}
+                  {!decrypted && <th>Lịch học</th>}
                   {decrypted && <th>GK</th>}
                   {decrypted && <th>CK</th>}
                   {decrypted && <th>Điểm trung bình</th>}

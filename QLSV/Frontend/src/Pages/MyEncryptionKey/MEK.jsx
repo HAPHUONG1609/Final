@@ -3,7 +3,7 @@ import "./MEK.css";
 
 function EncryptionKey() {
   const keyInfo = {
-    status: "Active",
+    status: "Đang hoạt động",
     keyId: "EK-2024-001-A",
     generatedAt: "2024-01-15",
     expiryAt: "2025-01-15",
@@ -31,7 +31,7 @@ function EncryptionKey() {
 
   const formatDateTime = (value, textValue) => {
     if (textValue) return textValue;
-    if (!value) return "N/A";
+    if (!value) return "Không có";
     return new Date(value).toLocaleString("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh",
       hour: "2-digit",
@@ -139,7 +139,7 @@ function EncryptionKey() {
         <section className="card ek__status">
           <div className="ek__statusHeader">
             <div className="ek__title one">
-              Encryption Key Status
+              Trạng thái khóa mã hóa
             </div>
             <span className="badge badge--ok">
               {keyInfo.status}
@@ -148,19 +148,19 @@ function EncryptionKey() {
 
           <ul className="ek__kv">
             <li>
-              <span>Key ID:</span>
+              <span>Mã khóa:</span>
               <strong className="mono">
                 {keyInfo.keyId}
               </strong>
             </li>
 
             <li>
-              <span>Generated Date:</span>
+              <span>Ngày tạo:</span>
               <strong>{keyInfo.generatedAt}</strong>
             </li>
 
             <li>
-              <span>Expiry Date:</span>
+              <span>Ngày hết hạn:</span>
               <strong>{keyInfo.expiryAt}</strong>
             </li>
           </ul>
@@ -169,19 +169,19 @@ function EncryptionKey() {
         {/* Logs */}
         <section className="card ek__logs">
           <div className="ek__title two">
-            Recent PIN Update Logs
+            Nhật ký đổi PIN gần đây
           </div>
 
           <div className="ek__logsTable">
             <div className="ek__logsHead">
-              <div>Date</div>
-              <div>Action</div>
+              <div>Ngày</div>
+              <div>Hành động</div>
             </div>
 
             <div className="ek__logsBody">
               {logsLoading ? (
                 <div className="ek__logsRow">
-                  <div>Loading...</div>
+                  <div>Đang tải...</div>
                   <div></div>
                 </div>
               ) : logsError ? (
@@ -211,7 +211,7 @@ function EncryptionKey() {
         {/* Change PIN */}
         <section className="card ek__change">
           <div className="ek__title">
-            Change Your PIN
+            Đổi PIN của bạn
           </div>
 
           <form className="ek__form" onSubmit={submit}>
@@ -221,7 +221,7 @@ function EncryptionKey() {
                 name="current"
                 value={form.current}
                 onChange={onChange}
-                placeholder="Current PIN"
+                placeholder="PIN hiện tại"
               />
             </label>
 
@@ -231,7 +231,7 @@ function EncryptionKey() {
                 name="next"
                 value={form.next}
                 onChange={onChange}
-                placeholder="New PIN"
+                placeholder="PIN mới"
               />
             </label>
 
@@ -241,7 +241,7 @@ function EncryptionKey() {
                 name="confirm"
                 value={form.confirm}
                 onChange={onChange}
-                placeholder="Confirm New PIN"
+                placeholder="Xác nhận PIN mới"
               />
             </label>
 
@@ -256,7 +256,7 @@ function EncryptionKey() {
               type="submit"
               disabled={loading}
             >
-              {loading ? "Updating..." : "Change PIN"}
+              {loading ? "Đang cập nhật..." : "Đổi PIN"}
             </button>
           </form>
         </section>

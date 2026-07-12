@@ -4,9 +4,6 @@ import { useNavigate, Outlet, NavLink } from "react-router-dom";
 function AdminSidebar() {
   const navigate = useNavigate();
   const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
-  const roleName = String(localStorage.getItem("role") || "").trim().toUpperCase();
-  const isTeacher = ["GIANGVIEN", "GIẢNGVIÊN", "GV"].includes(roleName);
-
   const onLogout = async () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -57,26 +54,18 @@ function AdminSidebar() {
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, marginTop: '8px' }}>
           <NavLink to="/admin/dashboard" style={({ isActive }) => navLinkStyle(isActive)}>
             <i className="fa-solid fa-table-columns" style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ffffff' }}></i>
-            <span style={{ color: '#ffffff' }}>Dashboard</span>
+            <span style={{ color: '#ffffff' }}>Bảng điều khiển</span>
           </NavLink>
+
           <NavLink to="/admin/management-key" style={({ isActive }) => navLinkStyle(isActive)}>
-            <i className="fa-solid fa-key" style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ffffff' }}></i>
-            <span style={{ color: '#ffffff' }}>Management key</span>
+            <i className="fa-solid fa-building-columns" style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ffffff' }}></i>
+            <span style={{ color: '#ffffff' }}>Quản lý khoa</span>
           </NavLink>
+
           <NavLink to="/admin/students" style={({ isActive }) => navLinkStyle(isActive)}>
-            <i className="fa-solid fa-user" style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ffffff' }}></i>
-            <span style={{ color: '#ffffff' }}>Student Information</span>
+            <i className="fa-solid fa-user-graduate" style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ffffff' }}></i>
+            <span style={{ color: '#ffffff' }}>Quản lý sinh viên</span>
           </NavLink>
-          <NavLink to="/admin/grades" style={({ isActive }) => navLinkStyle(isActive)}>
-            <i className="fa-solid fa-graduation-cap" style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ffffff' }}></i>
-            <span style={{ color: '#ffffff' }}>Manage Grades</span>
-          </NavLink>
-          {isTeacher && (
-            <NavLink to="/admin/logs" style={({ isActive }) => navLinkStyle(isActive)}>
-              <i className="fa-solid fa-file-lines" style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ffffff' }}></i>
-              <span style={{ color: '#ffffff' }}>Encryption Key</span>
-            </NavLink>
-          )}
         </nav>
 
         {/* Logout Button */}
@@ -86,7 +75,7 @@ function AdminSidebar() {
             style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', backgroundColor: '#ef4444', color: '#ffffff', borderRadius: '8px', fontSize: '13px', fontWeight: '500', border: 'none', cursor: 'pointer', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.25)' }}
           >
             <i className="fa-solid fa-right-from-bracket" style={{ color: '#ffffff' }}></i>
-            <span style={{ color: '#ffffff' }}>Logout</span>
+            <span style={{ color: '#ffffff' }}>Đăng xuất</span>
           </button>
         </div>
       </aside>
@@ -100,7 +89,7 @@ function AdminSidebar() {
               onClick={onLogout}
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', backgroundColor: '#ef4444', color: '#ffffff', borderRadius: '8px', fontSize: '14px', fontWeight: '500', border: 'none', cursor: 'pointer' }}
             >
-              Logout <i className="fa-solid fa-power-off" style={{ fontSize: '12px', color: '#ffffff' }}></i>
+              Đăng xuất <i className="fa-solid fa-power-off" style={{ fontSize: '12px', color: '#ffffff' }}></i>
             </button>
             <div style={{ width: '36px', height: '36px', borderRadius: '50%', overflow: 'hidden', border: '2px solid #475569' }}>
               <img 

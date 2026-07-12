@@ -2,13 +2,16 @@ import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import Avt from "../../assets/icon/user.png";
 
-function StudentSidebar() {
+function TeacherSidebar() {
   const navigate = useNavigate();
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
   const onLogout = async () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("roleCode");
+    localStorage.removeItem("role");
+    localStorage.removeItem("username");
 
     try {
       await fetch(`${API_BASE}/auth/logout`, {
@@ -23,7 +26,9 @@ function StudentSidebar() {
   };
 
   const linkStyle = ({ isActive }) => ({
-    display: "block",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
     marginBottom: "12px",
     color: "white",
     textDecoration: "none",
@@ -35,9 +40,10 @@ function StudentSidebar() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#f8fafc" }}>
-      <div
+      <aside
         style={{
           width: "220px",
+          minWidth: "220px",
           background: "#0b1a33",
           padding: "20px",
           display: "flex",
@@ -46,48 +52,45 @@ function StudentSidebar() {
       >
         <h3 style={{ color: "white", marginBottom: "20px" }}>CRT Encrypt</h3>
 
-        <nav>
-          <NavLink to="dashboard" style={linkStyle}>
-            Bảng điều khiển
+        <nav style={{ flex: 1 }}>
+          <NavLink to="/teacher/dashboard" style={linkStyle}>
+            <i className="fa-solid fa-table-columns"></i>
+            <span>Bảng điều khiển</span>
           </NavLink>
 
-          <NavLink to="academic" style={linkStyle}>
-            Học tập
+          <NavLink to="/teacher/grades" style={linkStyle}>
+            <i className="fa-solid fa-graduation-cap"></i>
+            <span>Nhập điểm</span>
           </NavLink>
 
-          <NavLink to="personal-info" style={linkStyle}>
-            Thông tin cá nhân
-          </NavLink>
-
-          <NavLink to="encryption-key" style={linkStyle}>
-            Khóa mã hóa của tôi
+          <NavLink to="/teacher/encryption-key" style={linkStyle}>
+            <i className="fa-solid fa-key"></i>
+            <span>Sửa mã PIN</span>
           </NavLink>
         </nav>
 
-        <div style={{ marginTop: "auto", paddingTop: "20px" }}>
-          <button
-            onClick={onLogout}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              padding: "10px 12px",
-              backgroundColor: "#ef4444",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            <i className="fa-solid fa-right-from-bracket"></i>
-            Đăng xuất
-          </button>
-        </div>
-      </div>
+        <button
+          onClick={onLogout}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+            padding: "10px 12px",
+            backgroundColor: "#ef4444",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <i className="fa-solid fa-right-from-bracket"></i>
+          Đăng xuất
+        </button>
+      </aside>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <header
@@ -118,8 +121,10 @@ function StudentSidebar() {
                 cursor: "pointer",
               }}
             >
-              Đăng xuất <i className="fa-solid fa-power-off" style={{ fontSize: "12px" }}></i>
+              Đăng xuất
+              <i className="fa-solid fa-power-off" style={{ fontSize: "12px" }}></i>
             </button>
+
             <div
               style={{
                 width: "36px",
@@ -147,4 +152,4 @@ function StudentSidebar() {
   );
 }
 
-export default StudentSidebar;
+export default TeacherSidebar;
