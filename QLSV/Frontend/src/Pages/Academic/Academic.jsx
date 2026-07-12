@@ -1,8 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import "./Academic.css";
 import Student from "../../assets/icon/student-bg.png";
-
-const API_BASE = "http://localhost:3000";
+import { API_BASE } from "../../utils/auth.js";
 
 function pick(obj, keys, defaultValue = "") {
   for (const key of keys) {

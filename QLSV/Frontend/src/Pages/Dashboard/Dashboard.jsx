@@ -5,6 +5,7 @@ import Key from "../../assets/icon/key.png";
 import Id from "../../assets/icon/id.png";
 import User from "../../assets/icon/user.png";
 import Scur from "../../assets/icon/scurity.png";
+import { API_BASE } from "../../utils/auth.js";
 
 function Dashboard() {
   const [keyStatus, setKeyStatus] = useState("Chưa xác minh");
@@ -22,7 +23,7 @@ function Dashboard() {
       setErr("");
 
       try {
-        const res = await fetch("http://localhost:3000/student", {
+        const res = await fetch(`${API_BASE}/student`, {
           credentials: "include",
         });
 
@@ -47,7 +48,7 @@ function Dashboard() {
   useEffect(() => {
     const fetchLoginHistory = async () => {
       try {
-        const res = await fetch(`http://localhost:3000/api/login-history?t=${Date.now()}`, {
+        const res = await fetch(`${API_BASE}/api/login-history?t=${Date.now()}`, {
           method: "GET",
           credentials: "include",
         });

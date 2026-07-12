@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Pagination from "../../components/Pagination/Pagination";
+import { API_BASE } from "../../utils/auth.js";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 const ITEMS_PER_PAGE = 5;
 
 function ManagementKey() {

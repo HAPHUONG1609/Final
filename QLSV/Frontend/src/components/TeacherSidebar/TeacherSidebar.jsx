@@ -1,110 +1,141 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import Avt from "../../assets/icon/user.png";
+import { logoutSession } from "../../utils/auth.js";
 
 function TeacherSidebar() {
   const navigate = useNavigate();
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
   const onLogout = async () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("roleCode");
-    localStorage.removeItem("role");
-    localStorage.removeItem("username");
-
     try {
-      await fetch(`${API_BASE}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await logoutSession();
+      navigate("/login", { replace: true });
     } catch (err) {
       console.error("Logout error:", err);
-    } finally {
-      navigate("/login", { replace: true });
+      alert("Không thể đăng xuất. Vui lòng kiểm tra backend và thử lại.");
     }
   };
 
   const linkStyle = ({ isActive }) => ({
     display: "flex",
     alignItems: "center",
-    gap: "10px",
-    marginBottom: "12px",
-    color: "white",
-    textDecoration: "none",
-    padding: "10px 12px",
+    gap: "12px",
+    padding: "10px 16px",
+    margin: "0 8px",
     borderRadius: "8px",
-    background: isActive ? "#2563eb" : "transparent",
-    fontWeight: 500,
+    fontSize: "13px",
+    fontWeight: "500",
+    transition: "all 0.2s",
+    color: "#ffffff",
+    textDecoration: "none",
+    backgroundColor: isActive ? "#2563eb" : "transparent",
+    boxShadow: isActive ? "0 4px 12px rgba(37, 99, 235, 0.25)" : "none",
   });
 
+  const iconStyle = {
+    width: "20px",
+    height: "20px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "14px",
+    color: "#ffffff",
+  };
+
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#f8fafc" }}>
+    <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#0f172a" }}>
       <aside
         style={{
-          width: "220px",
-          minWidth: "220px",
-          background: "#0b1a33",
-          padding: "20px",
+          width: "200px",
+          minWidth: "200px",
           display: "flex",
           flexDirection: "column",
+          minHeight: "100vh",
+          backgroundColor: "#0f172a",
         }}
       >
-        <h3 style={{ color: "white", marginBottom: "20px" }}>CRT Encrypt</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "16px" }}>
+          <div
+            style={{
+              width: "28px",
+              height: "28px",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "rgba(59, 130, 246, 0.2)",
+            }}
+          >
+            <i className="fa-solid fa-check" style={{ fontSize: "12px", color: "#60a5fa" }}></i>
+          </div>
+          <span style={{ fontWeight: "600", fontSize: "14px", color: "#f97316" }}>CRT Encrypt</span>
+        </div>
 
-        <nav style={{ flex: 1 }}>
+        <nav style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, marginTop: "8px" }}>
           <NavLink to="/teacher/dashboard" style={linkStyle}>
-            <i className="fa-solid fa-table-columns"></i>
-            <span>Bảng điều khiển</span>
+            <i className="fa-solid fa-table-columns" style={iconStyle}></i>
+            <span style={{ color: "#ffffff" }}>Bảng điều khiển</span>
           </NavLink>
 
           <NavLink to="/teacher/grades" style={linkStyle}>
-            <i className="fa-solid fa-graduation-cap"></i>
-            <span>Nhập điểm</span>
+            <i className="fa-solid fa-graduation-cap" style={iconStyle}></i>
+            <span style={{ color: "#ffffff" }}>Nhập điểm</span>
           </NavLink>
 
           <NavLink to="/teacher/encryption-key" style={linkStyle}>
-            <i className="fa-solid fa-key"></i>
-            <span>Sửa mã PIN</span>
+            <i className="fa-solid fa-key" style={iconStyle}></i>
+            <span style={{ color: "#ffffff" }}>Sửa mã PIN</span>
           </NavLink>
         </nav>
 
-        <button
-          onClick={onLogout}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "8px",
-            padding: "10px 12px",
-            backgroundColor: "#ef4444",
-            color: "white",
-            border: "none",
-            borderRadius: "8px",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          <i className="fa-solid fa-right-from-bracket"></i>
-          Đăng xuất
-        </button>
+        <div style={{ padding: "8px" }}>
+          <button
+            onClick={onLogout}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              padding: "10px",
+              backgroundColor: "#ef4444",
+              color: "#ffffff",
+              borderRadius: "8px",
+              fontSize: "13px",
+              fontWeight: "500",
+              border: "none",
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(239, 68, 68, 0.25)",
+            }}
+          >
+            <i className="fa-solid fa-right-from-bracket" style={{ color: "#ffffff" }}></i>
+            <span style={{ color: "#ffffff" }}>Đăng xuất</span>
+          </button>
+        </div>
       </aside>
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div
+        style={{
+          flex: 1,
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          backgroundColor: "#1e293b",
+          minWidth: 0,
+        }}
+      >
         <header
           style={{
-            height: "64px",
+            height: "56px",
+            flexShrink: 0,
+            backgroundColor: "#0f172a",
             display: "flex",
             alignItems: "center",
             justifyContent: "flex-end",
-            padding: "0 24px",
-            background: "white",
-            borderBottom: "1px solid #e5e7eb",
+            padding: "0 32px",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
             <button
               onClick={onLogout}
               style={{
@@ -113,16 +144,15 @@ function TeacherSidebar() {
                 gap: "8px",
                 padding: "8px 16px",
                 backgroundColor: "#ef4444",
-                color: "white",
-                border: "none",
+                color: "#ffffff",
                 borderRadius: "8px",
                 fontSize: "14px",
-                fontWeight: 600,
+                fontWeight: "500",
+                border: "none",
                 cursor: "pointer",
               }}
             >
-              Đăng xuất
-              <i className="fa-solid fa-power-off" style={{ fontSize: "12px" }}></i>
+              Đăng xuất <i className="fa-solid fa-power-off" style={{ fontSize: "12px", color: "#ffffff" }}></i>
             </button>
 
             <div
@@ -131,20 +161,19 @@ function TeacherSidebar() {
                 height: "36px",
                 borderRadius: "50%",
                 overflow: "hidden",
-                border: "2px solid #cbd5e1",
-                backgroundColor: "#f1f5f9",
+                border: "2px solid #475569",
               }}
             >
               <img
                 src={Avt}
                 alt="avatar"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                style={{ width: "100%", height: "100%", objectFit: "cover", backgroundColor: "#334155" }}
               />
             </div>
           </div>
         </header>
 
-        <main style={{ flex: 1, padding: "30px", overflowY: "auto" }}>
+        <main style={{ flex: 1, padding: "20px 24px", overflowY: "auto" }}>
           <Outlet />
         </main>
       </div>

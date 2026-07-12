@@ -27,20 +27,6 @@ import AdminEncryptionKey from "./Pages/Admin/EncryptionKey.jsx";
 // Teacher layout
 import TeacherSidebar from "./components/TeacherSidebar/TeacherSidebar.jsx";
 
-function RequireRole({ allowedRoleCodes }) {
-  const roleCode = localStorage.getItem("roleCode");
-
-  if (roleCode === null) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (!allowedRoleCodes.map(String).includes(String(roleCode))) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <Outlet />;
-}
-
 export default function App() {
   return (
     <ErrorBoundary>
@@ -62,11 +48,7 @@ export default function App() {
           </Route>
 
           {/* ===== ADMIN + GIẢNG VIÊN: bắt buộc còn session phù hợp ===== */}
-          <Route
-            element={
-              <RequireAuth allowedRoles={["ADMIN", "GIANGVIEN"]} />
-            }
-          >
+          <Route element={<RequireAuth allowedRoles={["ADMIN"]} />}>
             <Route path="/admin" element={<AdminSidebar />}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<AdminDashboard />} />
@@ -74,6 +56,15 @@ export default function App() {
               <Route path="students" element={<ManageStudentInformation />} />
               <Route path="grades" element={<ManageGrades />} />
               <Route path="logs" element={<AdminEncryptionKey />} />
+            </Route>
+          </Route>
+
+          <Route element={<RequireAuth allowedRoles={["GIANGVIEN"]} />}>
+            <Route path="/teacher" element={<TeacherSidebar />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<Navigate to="../grades" replace />} />
+              <Route path="grades" element={<ManageGrades />} />
+              <Route path="encryption-key" element={<AdminEncryptionKey />} />
             </Route>
           </Route>
 

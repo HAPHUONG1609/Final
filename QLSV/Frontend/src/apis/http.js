@@ -1,8 +1,9 @@
 // Frontend/src/api/http.js
 import axios from "axios";
+import { API_BASE } from "../utils/auth.js";
 
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE || "http://localhost:4000/api",
+  baseURL: import.meta.env.VITE_API_BASE || `${API_BASE}/api`,
 });
 
 http.interceptors.request.use((config) => {

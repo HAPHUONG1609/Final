@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import "./MEK.css";
+import { API_BASE } from "../../utils/auth.js";
 
 function EncryptionKey() {
   const keyInfo = {
@@ -48,7 +49,7 @@ function EncryptionKey() {
       setLogsLoading(true);
       setLogsError("");
 
-      const res = await fetch("http://localhost:3000/api/pin-change-history", {
+      const res = await fetch(`${API_BASE}/api/pin-change-history`, {
         method: "GET",
         credentials: "include"
       });
@@ -93,7 +94,7 @@ function EncryptionKey() {
       setLoading(true);
 
       const res = await fetch(
-        "http://localhost:3000/api/set-pin",
+        `${API_BASE}/api/set-pin`,
         {
           method: "POST",
           headers: {

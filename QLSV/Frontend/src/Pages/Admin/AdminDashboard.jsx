@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-
-const API_BASE = "http://localhost:3000";
+import { API_BASE } from "../../utils/auth.js";
 
 const emptyForm = {
   facultyId: "",

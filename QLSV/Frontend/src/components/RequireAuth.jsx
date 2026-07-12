@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import {
   clearAuthStorage,
+  getRoleHome,
   getCurrentSession,
   normalizeRole,
 } from "../utils/auth.js";
@@ -35,7 +36,10 @@ export default function RequireAuth({ allowedRoles = [] }) {
 
         localStorage.setItem("role", role);
         localStorage.setItem("username", String(user.username || ""));
-        localStorage.setItem("roleCode", role === "SINHVIEN" ? "0" : "1");
+        localStorage.setItem(
+          "roleCode",
+          role === "SINHVIEN" ? "0" : role === "ADMIN" ? "1" : "2"
+        );
 
         const acceptedRoles = allowedRolesKey
           ? allowedRolesKey.split("|")
@@ -51,7 +55,7 @@ export default function RequireAuth({ allowedRoles = [] }) {
         if (!cancelled) {
           setAuthState({ status: "authenticated", role });
         }
-      } catch (_error) {
+      } catch {
         clearAuthStorage();
         if (!cancelled) {
           setAuthState({ status: "unauthenticated", role: "" });
@@ -94,11 +98,7 @@ export default function RequireAuth({ allowedRoles = [] }) {
   }
 
   if (authState.status === "forbidden") {
-    const home =
-      authState.role === "SINHVIEN"
-        ? "/student/dashboard"
-        : "/admin/dashboard";
-    return <Navigate to={home} replace />;
+    return <Navigate to={getRoleHome(authState.role)} replace />;
   }
 
   return <Outlet />;

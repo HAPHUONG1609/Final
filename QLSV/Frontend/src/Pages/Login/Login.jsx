@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import "./Login.css";
 import Scur from "../../assets/icon/scurity.png";
-import { API_BASE, clearAuthStorage } from "../../utils/auth.js";
+import { API_BASE, clearAuthStorage, getRoleHome, normalizeRole } from "../../utils/auth.js";
 
 function Login() {
   const [credentials, setCredentials] = useState({ identifier: '', password: '' });
@@ -46,21 +46,20 @@ function Login() {
           localStorage.removeItem("crt_username");
         }
 
-        localStorage.setItem("roleCode", data.roleCode);
-        localStorage.setItem("role", data.role);
-        localStorage.setItem("username", data.username);
-
-        if (Number(data.roleCode) === 1) {
-          navigate("/admin/dashboard", { replace: true });
-        } else if (Number(data.roleCode) === 0) {
-          navigate("/teacher/dashboard", { replace: true });
-        } else {
-          setError("Tài khoản chưa được phân quyền");
+        const role = normalizeRole(data.role);
+        if (!role) {
+          setError("Tài khoản chưa được phân quyền hợp lệ");
+          return;
         }
+
+        localStorage.setItem("roleCode", String(data.roleCode ?? ""));
+        localStorage.setItem("role", role);
+        localStorage.setItem("username", data.username);
+        navigate(data.redirectUrl || getRoleHome(role), { replace: true });
       } else {
         setError(data.message || "Đăng nhập không thành công");
       }
-    } catch (err) {
+    } catch {
       setError("Lỗi kết nối đến máy chủ");
     }
     setLoading(false);

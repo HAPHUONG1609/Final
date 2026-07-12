@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const sql = require("msnodesqlv8");
 const cors = require("cors");
@@ -27,12 +28,23 @@ const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 /* ---------- 1. Kết nối SQL (Windows Auth, ODBC 17) ---------- */
+const SQL_SERVER = process.env.SQL_SERVER || "localhost\\SQLEXPRESS";
+const SQL_DATABASE = process.env.SQL_DATABASE || "QLSV_AT";
+const SQL_DRIVER = process.env.SQL_DRIVER || "ODBC Driver 17 for SQL Server";
+const SQL_USER = process.env.SQL_USER || "";
+const SQL_PASSWORD = process.env.SQL_PASSWORD || "";
+
 const connectionString =
-  "Server=localhost\\SQLEXPRESS;"+
-  "Database=QLSV_AT;" +
-  "Trusted_Connection=Yes;" +
-  "Driver={ODBC Driver 17 for SQL Server};" +
-  "Encrypt=no;TrustServerCertificate=yes;";
+  process.env.SQL_CONNECTION_STRING ||
+  [
+    `Server=${SQL_SERVER}`,
+    `Database=${SQL_DATABASE}`,
+    SQL_USER ? `UID=${SQL_USER}` : "Trusted_Connection=Yes",
+    SQL_USER ? `PWD=${SQL_PASSWORD}` : "",
+    `Driver={${SQL_DRIVER}}`,
+    "Encrypt=no",
+    "TrustServerCertificate=yes",
+  ].filter(Boolean).join(";");
 
 /* ==================== CÁC HÀM TIỆN ÍCH CRYPTO ==================== */
 
@@ -74,6 +86,23 @@ function decryptAES(encryptedData, aesKey) {
 }
 
 
+function normalizeRole(value) {
+  const role = String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[Đđ]/g, "D")
+    .toUpperCase()
+    .replace(/[\s_-]+/g, "");
+
+  if (role === "ADMIN" || role === "1") return "ADMIN";
+  if (role === "GIANGVIEN" || role === "GV" || role === "2") return "GIANGVIEN";
+  if (role === "SINHVIEN" || role === "STUDENT" || role === "SV" || role === "0") {
+    return "SINHVIEN";
+  }
+  return "";
+}
+
 function getAuthUser(req) {
   const user = req.session?.user;
 
@@ -89,15 +118,13 @@ function getAuthUser(req) {
     };
   }
 
-  const roleName = String(
+  const roleName = normalizeRole(
     user.roleName ||
     user.roleRaw ||
     user.ROLE ||
     user.role ||
     ""
-  )
-    .trim()
-    .toUpperCase();
+  );
 
   const relatedId = String(
     user.relatedId ||
@@ -106,17 +133,9 @@ function getAuthUser(req) {
     ""
   ).trim();
 
-  const isAdmin = roleName === "ADMIN" || roleName === "1";
-  const isTeacher =
-    roleName === "GIANGVIEN" ||
-    roleName === "GIẢNGVIÊN" ||
-    roleName === "GV";
-  const isStudent =
-    roleName === "SINHVIEN" ||
-    roleName === "SINH VIÊN" ||
-    roleName === "STUDENT" ||
-    roleName === "SV" ||
-    roleName === "0";
+  const isAdmin = roleName === "ADMIN";
+  const isTeacher = roleName === "GIANGVIEN";
+  const isStudent = roleName === "SINHVIEN";
 
   return {
     isLoggedIn: true,
@@ -167,7 +186,9 @@ function handleLogout(req, res) {
 }
 
 /* ==================== HELPER ASYNC + CRT GRADE SERVICE ==================== */
-const JAVA_GRADE_CRT_BASE = "http://localhost:8080/internal/crypto/grade-crt";
+const JAVA_CRYPTO_URL = (process.env.JAVA_CRYPTO_URL || "http://localhost:8080").replace(/\/+$/, "");
+const JAVA_CRYPTO_INTERNAL_BASE = `${JAVA_CRYPTO_URL}/internal/crypto`;
+const JAVA_GRADE_CRT_BASE = `${JAVA_CRYPTO_INTERNAL_BASE}/grade-crt`;
 
 function queryAsync(query, params = []) {
   return new Promise((resolve, reject) => {
@@ -1144,7 +1165,7 @@ sql.query(connectionString, spKhoa, async (err, rows) => {
 });
 
 async function callJavaBatch(list) {
-  const res = await fetch("http://localhost:8080/internal/crypto/process-batch", {
+  const res = await fetch(`${JAVA_CRYPTO_INTERNAL_BASE}/process-batch`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(list)
   });
   if (!res.ok) throw new Error("Java API error: " + res.status);
@@ -1152,7 +1173,7 @@ async function callJavaBatch(list) {
 }
 
 async function callJavaCalculateIndex(payload) {
-  const res = await fetch("http://localhost:8080/internal/crypto/calculate-index", {
+  const res = await fetch(`${JAVA_CRYPTO_INTERNAL_BASE}/calculate-index`, {
     method: "POST", 
     headers: { "Content-Type": "application/json" }, 
     body: JSON.stringify(payload)
@@ -1162,7 +1183,7 @@ async function callJavaCalculateIndex(payload) {
 }
 
 async function callJavaCrypto(payload) {
-  const res = await fetch("http://localhost:8080/internal/crypto/process", {
+  const res = await fetch(`${JAVA_CRYPTO_INTERNAL_BASE}/process`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
   });
   if (!res.ok) throw new Error("Java service error");
@@ -1216,9 +1237,23 @@ function getThongTinTuMSSV(mssv, cb) {
 
 /* ---------- 5. Khởi tạo Express + Session + CORS ---------- */
 const app = express();
+if (SESSION_COOKIE_SECURE) {
+  app.set("trust proxy", 1);
+}
+
+const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin(origin, callback) {
+      if (!origin || CLIENT_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS origin not allowed: ${origin}`));
+    },
     //methods: ["GET", "POST", "PUT", "DELETE"],
     //allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -1269,27 +1304,19 @@ app.post("/login", (req, res) => {
 
     const tk = rows[0];
 
-    const roleRaw = String(tk.ROLE || "").trim().toUpperCase();
+    const roleRaw = normalizeRole(tk.ROLE);
 
     let roleCode = -1;
     let redirectUrl = "/";
 
     // ADMIN và GIANGVIEN đều vào trang admin
-    if (
-      roleRaw === "ADMIN" ||
-      roleRaw === "GIANGVIEN" ||
-      roleRaw === "GIẢNGVIÊN" ||
-      roleRaw === "GV" ||
-      roleRaw === "1"
-    ) {
+    if (roleRaw === "ADMIN") {
       roleCode = 1;
       redirectUrl = "/admin/dashboard";
-    } else if (
-      roleRaw === "SINHVIEN" ||
-      roleRaw === "STUDENT" ||
-      roleRaw === "SV" ||
-      roleRaw === "0"
-    ) {
+    } else if (roleRaw === "GIANGVIEN") {
+      roleCode = 2;
+      redirectUrl = "/teacher/dashboard";
+    } else if (roleRaw === "SINHVIEN") {
       roleCode = 0;
       redirectUrl = "/student/dashboard";
     } else {
@@ -1302,7 +1329,7 @@ app.post("/login", (req, res) => {
     req.session.user = {
       user: tk.USERNAME,
       username: tk.USERNAME,
-      role: roleCode,
+      role: roleRaw,
       roleName: roleRaw,
       relatedId: tk.RELATED_ID,
       id: tk.RELATED_ID,
@@ -1372,7 +1399,7 @@ app.get("/auth/me", requireSession, (req, res) => {
       username: auth.username,
       role: auth.roleName,
       relatedId: auth.relatedId,
-      roleCode: auth.isStudent ? 0 : 1,
+      roleCode: auth.isStudent ? 0 : auth.isAdmin ? 1 : 2,
     },
   });
 });
@@ -1384,6 +1411,41 @@ app.use((req, res, next) => {
     return next();
   }
   return requireSession(req, res, next);
+});
+
+// Phân quyền tại API; route guard phía frontend chỉ phục vụ điều hướng giao diện.
+app.use((req, res, next) => {
+  const auth = getAuthUser(req);
+  const pathName = req.path.toLowerCase();
+
+  const deny = () =>
+    res.status(403).json({
+      success: false,
+      message: "Bạn không có quyền thực hiện thao tác này",
+      code: "FORBIDDEN",
+    });
+
+  if (pathName === "/student" || pathName.startsWith("/student/")) {
+    return auth.isStudent ? next() : deny();
+  }
+
+  if (
+    pathName.startsWith("/api/tkb/") ||
+    pathName === "/api/tkb/year" ||
+    pathName === "/api/view-grades"
+  ) {
+    return auth.isStudent ? next() : deny();
+  }
+
+  if (pathName === "/admin/nhap-diem") {
+    return auth.isTeacher ? next() : deny();
+  }
+
+  if (pathName === "/admin" || pathName.startsWith("/admin/")) {
+    return auth.isAdmin ? next() : deny();
+  }
+
+  return next();
 });
 
 // API lấy lịch sử đăng nhập: dùng ở Dashboard sinh viên
@@ -2004,7 +2066,7 @@ app.post("/admin/nhap-diem", async (req, res) => {
       // =======================================================
 
       const primeRangeRes = await fetch(
-        "http://localhost:8080/internal/crypto/grade-crt/prime-range",
+        `${JAVA_GRADE_CRT_BASE}/prime-range`,
         {
           method: "POST",
           headers: {
@@ -2122,7 +2184,7 @@ app.post("/admin/nhap-diem", async (req, res) => {
       // =======================================================
 
       const encryptRes = await fetch(
-        "http://localhost:8080/internal/crypto/grade-crt/encrypt",
+        `${JAVA_GRADE_CRT_BASE}/encrypt`,
         {
           method: "POST",
           headers: {
@@ -2558,7 +2620,7 @@ app.post("/api/view-grades", async (req, res) => {
     // =========================================================
 
     const primeRangeRes = await fetch(
-      "http://localhost:8080/internal/crypto/grade-crt/prime-range",
+      `${JAVA_GRADE_CRT_BASE}/prime-range`,
       {
         method: "POST",
         headers: {
@@ -2660,7 +2722,7 @@ app.post("/api/view-grades", async (req, res) => {
     // =========================================================
 
     const javaResponse = await fetch(
-      "http://localhost:8080/internal/crypto/grade-crt/decrypt",
+      `${JAVA_GRADE_CRT_BASE}/decrypt`,
       {
         method: "POST",
         headers: {
@@ -3083,7 +3145,7 @@ app.post("/api/get-personal-key", (req, res) => {
     try {
       // --- Gọi Java tính primes_lop ---
       const step2Res = await fetch(
-        "http://localhost:8080/internal/crypto/process",
+        `${JAVA_CRYPTO_INTERNAL_BASE}/process`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3104,7 +3166,7 @@ app.post("/api/get-personal-key", (req, res) => {
       };
 
       const step3Res = await fetch(
-        "http://localhost:8080/internal/crypto/student-key",
+        `${JAVA_CRYPTO_INTERNAL_BASE}/student-key`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

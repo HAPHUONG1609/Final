@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Pagination from "../../components/Pagination/Pagination";
+import { API_BASE } from "../../utils/auth.js";
 
 const ITEMS_PER_PAGE = 5;
-const API_BASE = "http://localhost:3000";
 
 function Badge({ children, tone }) {
   const bg =

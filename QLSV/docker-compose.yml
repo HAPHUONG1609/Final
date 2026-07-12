@@ -1,0 +1,104 @@
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: qlsv-db
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Express
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-ChangeMe_StrongPass123!}
+    expose:
+      - "1433"
+    volumes:
+      - qlsv-db-data:/var/opt/mssql
+    restart: unless-stopped
+
+  db-init:
+    image: mcr.microsoft.com/mssql-tools
+    container_name: qlsv-db-init
+    depends_on:
+      - db
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-ChangeMe_StrongPass123!}
+    volumes:
+      - ./Backend/QLSV_AT.sql:/init/QLSV_AT.sql:ro
+    command: >
+      /bin/bash -c "
+      until /opt/mssql-tools/bin/sqlcmd -S db -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q \"SELECT 1\" >/dev/null 2>&1; do
+        echo 'Waiting for SQL Server...';
+        sleep 5;
+      done;
+      if /opt/mssql-tools/bin/sqlcmd -S db -U sa -P \"$${MSSQL_SA_PASSWORD}\" -h -1 -W -Q \"IF DB_ID('QLSV_AT') IS NOT NULL SELECT 1 ELSE SELECT 0\" | grep -q 1; then
+        echo 'Database QLSV_AT already exists, skip init.';
+        exit 0;
+      fi;
+      /opt/mssql-tools/bin/sqlcmd -S db -U sa -P \"$${MSSQL_SA_PASSWORD}\" -i /init/QLSV_AT.sql
+      "
+    restart: "no"
+
+  java-crypto:
+    build:
+      context: ./java-crypto-service
+    container_name: qlsv-java-crypto
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  seed-history:
+    build:
+      context: ./Backend
+    container_name: qlsv-seed-history
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      java-crypto:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      SQL_SERVER: db,1433
+      SQL_DATABASE: QLSV_AT
+      SQL_USER: sa
+      SQL_PASSWORD: ${MSSQL_SA_PASSWORD:-ChangeMe_StrongPass123!}
+      SQL_DRIVER: ODBC Driver 18 for SQL Server
+      SEED_CONCURRENCY: ${SEED_CONCURRENCY:-20}
+      SEED_TEACHER_PIN: ${SEED_TEACHER_PIN:-123456}
+      MAX_SEED_ROWS: ${MAX_SEED_ROWS:-0}
+    command: ["npm", "run", "seed:history"]
+    restart: "no"
+
+  backend:
+    build:
+      context: ./Backend
+    container_name: qlsv-backend
+    depends_on:
+      seed-history:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SESSION_SECRET: ${SESSION_SECRET:-change-this-session-secret}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost}
+      SQL_SERVER: db,1433
+      SQL_DATABASE: QLSV_AT
+      SQL_USER: sa
+      SQL_PASSWORD: ${MSSQL_SA_PASSWORD:-ChangeMe_StrongPass123!}
+      SQL_DRIVER: ODBC Driver 18 for SQL Server
+      JAVA_CRYPTO_URL: http://java-crypto:8080
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./Frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/backend}
+    container_name: qlsv-frontend
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    restart: unless-stopped
+
+volumes:
+  qlsv-db-data:

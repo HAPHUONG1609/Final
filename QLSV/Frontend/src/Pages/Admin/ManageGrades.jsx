@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import Pagination from "../../components/Pagination/Pagination";
+import { API_BASE } from "../../utils/auth.js";
 
 const ITEMS_PER_PAGE = 5;
-const API_BASE = "http://localhost:3000";
 const CURRENT_GRADE_YEAR = "2025-2026";
 const CURRENT_GRADE_SEMESTER = 2;
 

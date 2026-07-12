@@ -2,7 +2,13 @@ export const API_BASE =
   import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 export function normalizeRole(value) {
-  const role = String(value || "").trim().toUpperCase();
+  const role = String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[Đđ]/g, "D")
+    .toUpperCase()
+    .replace(/[\s_-]+/g, "");
 
   if (role === "ADMIN" || role === "1") return "ADMIN";
 
@@ -26,6 +32,14 @@ export function normalizeRole(value) {
   }
 
   return role;
+}
+
+export function getRoleHome(roleValue) {
+  const role = normalizeRole(roleValue);
+  if (role === "ADMIN") return "/admin/dashboard";
+  if (role === "GIANGVIEN") return "/teacher/dashboard";
+  if (role === "SINHVIEN") return "/student/dashboard";
+  return "/login";
 }
 
 export function clearAuthStorage() {
