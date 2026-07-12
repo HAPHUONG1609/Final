@@ -52,13 +52,13 @@ class ErrorBoundary extends Component {
             <div className="error-boundary__icon">
               <i className="fa-solid fa-bug"></i>
             </div>
-            <h1 className="error-boundary__title">Oops! Something went wrong</h1>
+            <h1 className="error-boundary__title">Ôi! Đã xảy ra sự cố</h1>
             <p className="error-boundary__message">
-              An unexpected error occurred. Please try refreshing the page.
+              Đã xảy ra lỗi ngoài dự kiến. Vui lòng thử tải lại trang.
             </p>
             {this.state.error && (
               <details className="error-boundary__details">
-                <summary>Error Details</summary>
+                <summary>Chi tiết lỗi</summary>
                 <pre>{this.state.error.toString()}</pre>
                 {this.state.errorInfo && (
                   <pre>{this.state.errorInfo.componentStack}</pre>
@@ -69,7 +69,7 @@ class ErrorBoundary extends Component {
               className="error-boundary__btn"
               onClick={() => window.location.href = "/"}
             >
-              Go to Home Page
+              Về trang chủ
             </button>
           </div>
           <style>{`
@@ -80,7 +80,7 @@ class ErrorBoundary extends Component {
               align-items: center;
               justify-content: center;
               padding: 24px;
-              font-family: 'Poppins', sans-serif;
+              font-family: 'Be Vietnam Pro', 'Inter', 'Noto Sans', sans-serif;
             }
             .error-boundary__content {
               max-width: 500px;

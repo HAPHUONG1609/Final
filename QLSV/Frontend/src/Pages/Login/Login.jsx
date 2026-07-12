@@ -37,28 +37,28 @@ function Login() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-      if (remember) {
-        localStorage.setItem("crt_username", credentials.identifier);
-      } else {
-        localStorage.removeItem("crt_username");
-      }
+        if (remember) {
+          localStorage.setItem("crt_username", credentials.identifier);
+        } else {
+          localStorage.removeItem("crt_username");
+        }
 
-      localStorage.setItem("roleCode", data.roleCode);
-      localStorage.setItem("role", data.role);
-      localStorage.setItem("username", data.username);
+        localStorage.setItem("roleCode", data.roleCode);
+        localStorage.setItem("role", data.role);
+        localStorage.setItem("username", data.username);
 
-      if (Number(data.roleCode) === 1) {
-        navigate("/admin/dashboard", { replace: true });
-      } else if (Number(data.roleCode) === 0) {
-        navigate("/student/dashboard", { replace: true });
+        if (Number(data.roleCode) === 1) {
+          navigate("/admin/dashboard", { replace: true });
+        } else if (Number(data.roleCode) === 0) {
+          navigate("/student/dashboard", { replace: true });
+        } else {
+          setError("Tài khoản chưa được phân quyền");
+        }
       } else {
-        setError("Tài khoản chưa được phân quyền");
+        setError(data.message || "Đăng nhập không thành công");
       }
-    } else {
-      setError(data.message || "Đăng nhập thất bại");
-    }
     } catch (err) {
-      setError("Lỗi kết nối tới server");
+      setError("Lỗi kết nối đến máy chủ");
     }
     setLoading(false);
   };
@@ -69,12 +69,12 @@ function Login() {
     <div className="login">
       <div className="login__card" role="region" aria-labelledby="loginTitle">
         <div className="login__brand">
-          <img src={Scur} className="brand-icon" alt="Security logo" />
+          <img src={Scur} className="brand-icon" alt="Biểu tượng bảo mật" />
           <span className="brand-name">CRT Encrypt</span>
         </div>
 
-        <h1 id="loginTitle" className="login__title">Sign In</h1>
-        <p className="login__subtitle">Enter your credentials to access your account.</p>
+        <h1 id="loginTitle" className="login__title">Đăng nhập</h1>
+        <p className="login__subtitle">Nhập thông tin đăng nhập để truy cập tài khoản của bạn.</p>
 
         {error && (
           <div className="login__alert" role="alert" aria-live="assertive">{error}</div>
@@ -82,7 +82,7 @@ function Login() {
 
         <form className="login__form" onSubmit={handleLoginSubmit} noValidate>
           <label className="field">
-            <span className="field__label">Username / Email</span>
+            <span className="field__label">Tên đăng nhập / Email</span>
             <input
               className="field__input"
               type="text"
@@ -93,7 +93,7 @@ function Login() {
               autoComplete="username"
               value={credentials.identifier}
               onChange={handleLoginChange}
-              placeholder="Enter your username or email"
+              placeholder="Nhập tên đăng nhập hoặc email"
               aria-invalid={!!error && !credentials.identifier.trim()}
               aria-describedby={error && !credentials.identifier.trim() ? "formMessage" : undefined}
               required
@@ -102,13 +102,13 @@ function Login() {
           </label>
 
           <label className="field">
-            <span className="field__label">Password</span>
+            <span className="field__label">Mật khẩu</span>
             <div className="field__password">
               <input
                 className="field__input"
                 type={showPwd ? "text" : "password"}
                 name="password"
-                placeholder="Enter your password"
+                placeholder="Nhập mật khẩu của bạn"
                 value={credentials.password}
                 onChange={handleLoginChange}
                 autoComplete="current-password"
@@ -123,10 +123,10 @@ function Login() {
                 className="btn btn--ghost btn--sm"
                 onClick={() => setShowPwd((s) => !s)}
                 aria-pressed={showPwd}
-                aria-label={showPwd ? "Hide password" : "Show password"}
+                aria-label={showPwd ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
                 disabled={loading}
               >
-                {showPwd ? "Hide" : "Show"}
+                {showPwd ? "Ẩn" : "Hiện"}
               </button>
             </div>
           </label>
@@ -140,12 +140,12 @@ function Login() {
                 onChange={(e) => setRemember(e.target.checked)}
                 disabled={loading}
               />
-              <span>Remember me</span>
+              <span>Ghi nhớ tôi</span>
             </label>
           </div>
 
           <button className="btn" type="submit" disabled={loading}>
-            {loading ? "Signing In..." : "Sign In"}
+            {loading ? "Đang đăng nhập..." : "Đăng nhập"}
           </button>
         </form>
 
