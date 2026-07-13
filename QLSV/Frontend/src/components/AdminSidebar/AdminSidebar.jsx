@@ -4,8 +4,6 @@ import { logoutSession } from "../../utils/auth.js";
 
 function AdminSidebar() {
   const navigate = useNavigate();
-  const roleName = String(localStorage.getItem("role") || "").trim().toUpperCase();
-  const isTeacher = ["GIANGVIEN", "GIẢNGVIÊN", "GV"].includes(roleName);
 
   const onLogout = async () => {
     try {
@@ -62,16 +60,6 @@ function AdminSidebar() {
           </NavLink>
         </nav>
 
-        {/* Logout Button */}
-        <div style={{ padding: '8px' }}>
-          <button 
-            onClick={onLogout}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', backgroundColor: '#ef4444', color: '#ffffff', borderRadius: '8px', fontSize: '13px', fontWeight: '500', border: 'none', cursor: 'pointer', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.25)' }}
-          >
-            <i className="fa-solid fa-right-from-bracket" style={{ color: '#ffffff' }}></i>
-            <span style={{ color: '#ffffff' }}>Đăng xuất</span>
-          </button>
-        </div>
       </aside>
 
       {/* Main Content Area */}

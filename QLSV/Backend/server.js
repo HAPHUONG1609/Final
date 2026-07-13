@@ -2815,6 +2815,46 @@ app.post("/api/view-grades", async (req, res) => {
     console.log("MSSV GIẢI MÃ:", mssvClean);
     console.log("MAHP GIẢI MÃ:", courseIdClean);
 
+    // Kiểm tra PIN trước khi kiểm tra DIEM_CRT.
+    // Nếu không làm bước này trước, môn chưa có điểm sẽ báo "chưa có điểm"
+    // ngay cả khi sinh viên nhập sai PIN.
+    const pinCheckRows = await new Promise((resolve, reject) => {
+      sql.query(
+        connectionString,
+        `
+          SELECT p.PIN_HASH
+          FROM SINH_VIEN sv
+          LEFT JOIN PING p ON LTRIM(RTRIM(p.MASV)) = LTRIM(RTRIM(sv.MaSV))
+          WHERE LTRIM(RTRIM(sv.MaSV)) = ?
+        `,
+        [mssvClean],
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve(rows);
+        }
+      );
+    });
+
+    if (!pinCheckRows || pinCheckRows.length === 0) {
+      return res.status(404).json({
+        message: `Không tìm thấy sinh viên ${mssvClean}`
+      });
+    }
+
+    const pinCheckStudent = pinCheckRows[0];
+    const pinCheckInputHash = crypto
+      .createHash("sha256")
+      .update(pin, "utf8")
+      .digest("hex")
+      .toUpperCase();
+    const pinCheckStoredHash = String(pinCheckStudent.PIN_HASH || "")
+      .trim()
+      .toUpperCase();
+
+    if (!pinCheckStoredHash || pinCheckStoredHash !== pinCheckInputHash) {
+      return res.status(400).json({ message: "Nhập PIN sai" });
+    }
+
     // =========================================================
     // 2. Lấy C và MAGV từ DIEM_CRT
     // MAGV dùng để biết giảng viên nào đã mã hóa điểm

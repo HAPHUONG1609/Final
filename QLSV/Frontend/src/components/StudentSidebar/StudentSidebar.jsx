@@ -57,29 +57,6 @@ function StudentSidebar() {
           </NavLink>
         </nav>
 
-        <div style={{ marginTop: "auto", paddingTop: "20px" }}>
-          <button
-            onClick={onLogout}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              padding: "10px 12px",
-              backgroundColor: "#ef4444",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            <i className="fa-solid fa-right-from-bracket"></i>
-            Đăng xuất
-          </button>
-        </div>
       </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>

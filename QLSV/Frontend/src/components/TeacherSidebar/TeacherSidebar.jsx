@@ -72,11 +72,6 @@ function TeacherSidebar() {
         </div>
 
         <nav style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, marginTop: "8px" }}>
-          <NavLink to="/teacher/dashboard" style={linkStyle}>
-            <i className="fa-solid fa-table-columns" style={iconStyle}></i>
-            <span style={{ color: "#ffffff" }}>Bảng điều khiển</span>
-          </NavLink>
-
           <NavLink to="/teacher/grades" style={linkStyle}>
             <i className="fa-solid fa-graduation-cap" style={iconStyle}></i>
             <span style={{ color: "#ffffff" }}>Nhập điểm</span>
@@ -88,30 +83,6 @@ function TeacherSidebar() {
           </NavLink>
         </nav>
 
-        <div style={{ padding: "8px" }}>
-          <button
-            onClick={onLogout}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              padding: "10px",
-              backgroundColor: "#ef4444",
-              color: "#ffffff",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: "500",
-              border: "none",
-              cursor: "pointer",
-              boxShadow: "0 4px 12px rgba(239, 68, 68, 0.25)",
-            }}
-          >
-            <i className="fa-solid fa-right-from-bracket" style={{ color: "#ffffff" }}></i>
-            <span style={{ color: "#ffffff" }}>Đăng xuất</span>
-          </button>
-        </div>
       </aside>
 
       <div
