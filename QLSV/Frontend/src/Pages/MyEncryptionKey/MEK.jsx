@@ -2,6 +2,9 @@ import React, { useEffect, useState } from "react";
 import "./MEK.css";
 import { API_BASE } from "../../utils/auth.js";
 
+const PIN_CHANGE_PROGRESS_MESSAGE = "Đang thực hiện đổi mã PIN, vui lòng chờ...";
+const PIN_CHANGE_SUCCESS_MESSAGE = "Đổi PIN thành công";
+
 function EncryptionKey() {
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(true);
@@ -88,7 +91,7 @@ function EncryptionKey() {
         throw new Error(data.message || data.error || "Đổi PIN thất bại");
       }
 
-      setMsg(data.message || "Đang mã hóa lại điểm CRT ở nền...");
+      setMsg(PIN_CHANGE_PROGRESS_MESSAGE);
     }
 
     throw new Error("Đổi PIN vẫn đang xử lý. Vui lòng tải lại trang để kiểm tra sau.");
@@ -137,11 +140,11 @@ function EncryptionKey() {
       }
 
       if (data.async && data.jobId) {
-        setMsg(data.message || "Đang mã hóa lại điểm CRT ở nền...");
-        const done = await pollPinChangeJob(data.jobId);
-        setMsg(done.message || "Cập nhật PIN thành công!");
+        setMsg(PIN_CHANGE_PROGRESS_MESSAGE);
+        await pollPinChangeJob(data.jobId);
+        setMsg(PIN_CHANGE_SUCCESS_MESSAGE);
       } else {
-        setMsg(data.message || "Cập nhật PIN thành công!");
+        setMsg(PIN_CHANGE_SUCCESS_MESSAGE);
       }
 
       setForm({
@@ -166,7 +169,6 @@ function EncryptionKey() {
         <section className="card ek__logs">
           <div className="ek__sectionHead">
             <div>
-              <div className="ek__eyebrow">Bảo mật tài khoản</div>
               <div className="ek__title">Nhật ký đổi PIN gần đây</div>
             </div>
             <span className="ek__count">{logs.length} bản ghi</span>
@@ -212,7 +214,6 @@ function EncryptionKey() {
         <section className="card ek__change">
           <div className="ek__sectionHead">
             <div>
-              <div className="ek__eyebrow">Mã PIN CRT</div>
               <div className="ek__title">Đổi PIN của bạn</div>
             </div>
           </div>

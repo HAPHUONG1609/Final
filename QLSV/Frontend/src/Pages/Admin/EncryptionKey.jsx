@@ -2,6 +2,9 @@ import React, { useEffect, useState } from "react";
 import "./EncryptionKey.css";
 import { API_BASE } from "../../utils/auth.js";
 
+const PIN_CHANGE_PROGRESS_MESSAGE = "Đang thực hiện đổi mã PIN, vui lòng chờ...";
+const PIN_CHANGE_SUCCESS_MESSAGE = "Đổi PIN thành công";
+
 function AdminEncryptionKey() {
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(true);
@@ -88,7 +91,7 @@ function AdminEncryptionKey() {
         throw new Error(data.message || data.error || "Đổi PIN thất bại");
       }
 
-      setMsg(data.message || "Đang mã hóa lại điểm CRT ở nền...");
+      setMsg(PIN_CHANGE_PROGRESS_MESSAGE);
     }
 
     throw new Error("Đổi PIN vẫn đang xử lý. Vui lòng tải lại trang để kiểm tra lịch sử sau.");
@@ -138,11 +141,11 @@ function AdminEncryptionKey() {
       }
 
       if (data.async && data.jobId) {
-        setMsg(data.message || "Đang mã hóa lại điểm CRT ở nền...");
-        const done = await pollPinChangeJob(data.jobId);
-        setMsg(done.message || "Cập nhật PIN giảng viên thành công!");
+        setMsg(PIN_CHANGE_PROGRESS_MESSAGE);
+        await pollPinChangeJob(data.jobId);
+        setMsg(PIN_CHANGE_SUCCESS_MESSAGE);
       } else {
-        setMsg(data.message || "Cập nhật PIN giảng viên thành công!");
+        setMsg(PIN_CHANGE_SUCCESS_MESSAGE);
       }
 
       setForm({
@@ -166,7 +169,6 @@ function AdminEncryptionKey() {
         <section className="card admin-ek__logs">
           <div className="admin-ek__sectionHead">
             <div>
-              <div className="admin-ek__eyebrow">Bảo mật giảng viên</div>
               <div className="admin-ek__title">Lịch sử đổi mã PIN gần đây</div>
             </div>
             <span className="admin-ek__count">{logs.length} bản ghi</span>
@@ -209,7 +211,6 @@ function AdminEncryptionKey() {
         <section className="card admin-ek__change">
           <div className="admin-ek__sectionHead">
             <div>
-              <div className="admin-ek__eyebrow">Mã PIN CRT</div>
               <div className="admin-ek__title">Đổi mã PIN giảng viên</div>
             </div>
           </div>
