@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate, Outlet, NavLink } from "react-router-dom";
 import { logoutSession } from "../../utils/auth.js";
+import AvatarMenu from "../AvatarMenu/AvatarMenu.jsx";
 
 function AdminSidebar() {
   const navigate = useNavigate();
@@ -73,13 +74,7 @@ function AdminSidebar() {
             >
               Đăng xuất <i className="fa-solid fa-power-off" style={{ fontSize: '12px', color: '#ffffff' }}></i>
             </button>
-            <div style={{ width: '36px', height: '36px', borderRadius: '50%', overflow: 'hidden', border: '2px solid #475569' }}>
-              <img 
-                src="https://api.dicebear.com/7.x/avataaars/svg?seed=admin" 
-                alt="avatar" 
-                style={{ width: '100%', height: '100%', objectFit: 'cover', backgroundColor: '#334155' }}
-              />
-            </div>
+            <AvatarMenu role="ADMIN" dark />
           </div>
         </header>
 

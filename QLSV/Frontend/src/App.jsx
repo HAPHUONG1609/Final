@@ -8,6 +8,8 @@ import Dashboard from "./Pages/Dashboard/Dashboard.jsx";
 import Academic from "./Pages/Academic/Academic.jsx";
 import PersonalInfo from "./Pages/PersonalInfo/PersonalInfo.jsx";
 import EncryptionKey from "./Pages/MyEncryptionKey/MEK.jsx";
+import ChangePassword from "./Pages/Account/ChangePassword.jsx";
+import TeacherProfile from "./Pages/Account/TeacherProfile.jsx";
 import StudentSidebar from "./components/StudentSidebar/StudentSidebar.jsx";
 import RequireAuth from "./components/RequireAuth.jsx";
 
@@ -44,6 +46,7 @@ export default function App() {
               <Route path="academic" element={<Academic />} />
               <Route path="personal-info" element={<PersonalInfo />} />
               <Route path="encryption-key" element={<EncryptionKey />} />
+              <Route path="change-password" element={<ChangePassword />} />
             </Route>
           </Route>
 
@@ -56,6 +59,7 @@ export default function App() {
               <Route path="students" element={<ManageStudentInformation />} />
               <Route path="grades" element={<ManageGrades />} />
               <Route path="logs" element={<AdminEncryptionKey />} />
+              <Route path="change-password" element={<ChangePassword dark />} />
             </Route>
           </Route>
 
@@ -65,6 +69,8 @@ export default function App() {
               <Route path="dashboard" element={<Navigate to="../grades" replace />} />
               <Route path="grades" element={<ManageGrades />} />
               <Route path="encryption-key" element={<AdminEncryptionKey />} />
+              <Route path="personal-info" element={<TeacherProfile />} />
+              <Route path="change-password" element={<ChangePassword dark />} />
             </Route>
           </Route>
 

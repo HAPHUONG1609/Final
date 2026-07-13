@@ -55,7 +55,7 @@
 /* ===== Top 4 info cards ===== */
 .dash__grid4 {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 24px;
   margin: 32px 0;  
 }
@@ -109,27 +109,6 @@
     font-weight: 800;
 }
 
-/* status + button */
-.status {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  width: max-content;
-}
-.status.ok   { 
-    background: #e8f9ee; 
-    color: #16a34a; 
-    border: 1px solid #c8f4d6; 
-}
-
-.status.warn { 
-    background: #fff7ed; 
-    color: #ea580c; 
-    border: 1px solid #fde1c3; 
-}
-
 .btn {
   margin-top: 8px;
   display: inline-flex;
@@ -144,8 +123,6 @@
   font-weight: 600;
   cursor: pointer;
 }
-.btn--verify { width: 100%; }
-
 /* ===== Security summary ===== */
 .dash__security {
   display: flex;

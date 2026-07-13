@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from "react";
 import "./Dashboard.css";
 import Class from "../../assets/icon/class.png";
-import Key from "../../assets/icon/key.png";
 import Id from "../../assets/icon/id.png";
 import User from "../../assets/icon/user.png";
 import Scur from "../../assets/icon/scurity.png";
 import { API_BASE } from "../../utils/auth.js";
 
 function Dashboard() {
-  const [keyStatus, setKeyStatus] = useState("Chưa xác minh");
   const [student, setStudent] = useState({});
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -81,10 +79,6 @@ function Dashboard() {
     });
   };
 
-  const onVerifyClick = async () => {
-    alert("Thao tác xác minh tại đây!");
-  };
-
   return (
     <div className="dash">
       <section className="dash__greet">
@@ -124,20 +118,6 @@ function Dashboard() {
           <div className="info__value id">{loading ? "…" : student.MaSV || "—"}</div>
         </div>
 
-        <div className="card info">
-          <img src={Key} alt="" className="info_icon" />
-          <div className="info__title">Trạng thái khóa</div>
-          <div className={`status ${keyStatus === "Đã xác minh" ? "ok" : "warn"}`}>
-            {loading ? "…" : keyStatus}
-          </div>
-          <button
-            className="btn btn--verify"
-            onClick={onVerifyClick}
-            disabled={loading}
-          >
-            Xác minh
-          </button>
-        </div>
       </section>
 
       <section className="card dash__security">
@@ -147,8 +127,8 @@ function Dashboard() {
         </div>
 
         <div className="sec__desc">
-          Dữ liệu của bạn được bảo vệ bằng cơ chế mã hóa nâng cao. Hãy xác minh
-          khóa mã hóa thường xuyên để tăng cường bảo mật.
+          Dữ liệu của bạn được bảo vệ bằng cơ chế mã hóa CRT. Hãy giữ bí mật mã PIN
+          và mật khẩu đăng nhập để bảo vệ thông tin học tập.
         </div>
       </section>
 

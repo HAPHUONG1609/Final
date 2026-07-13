@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import Avt from "../../assets/icon/user.png";
 import { logoutSession } from "../../utils/auth.js";
+import AvatarMenu from "../AvatarMenu/AvatarMenu.jsx";
 
 function StudentSidebar() {
   const navigate = useNavigate();
@@ -90,22 +90,7 @@ function StudentSidebar() {
             >
               Đăng xuất <i className="fa-solid fa-power-off" style={{ fontSize: "12px" }}></i>
             </button>
-            <div
-              style={{
-                width: "36px",
-                height: "36px",
-                borderRadius: "50%",
-                overflow: "hidden",
-                border: "2px solid #cbd5e1",
-                backgroundColor: "#f1f5f9",
-              }}
-            >
-              <img
-                src={Avt}
-                alt="avatar"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-            </div>
+            <AvatarMenu role="SINHVIEN" />
           </div>
         </header>
 

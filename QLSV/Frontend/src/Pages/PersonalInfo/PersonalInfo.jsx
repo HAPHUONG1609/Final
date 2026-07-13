@@ -16,7 +16,6 @@ function PersonalInfo() {
     LoaiHinhDT: "",
     ChuyeNganh: "",
     Khoa: "",
-    TinhTrang: "verified", // verified | unverified
   });
 
   const [loading, setLoading] = useState(true);
@@ -51,7 +50,6 @@ function PersonalInfo() {
             NganhDT: data?.NganhDT || "",
             ChuyenNganh: data?.ChuyenNganh || "",
             Khoa: data?.Khoa || "",
-            TinhTrang: data?.TinhTrang || "verified",
           });
         }
       } catch (e) {
@@ -64,11 +62,6 @@ function PersonalInfo() {
       dead = true;
     };
   }, []);
-
-  const handleVerify = () => {
-    // TODO: Implement verify logic
-    console.log("Verify key clicked");
-  };
 
   const handleUpdate = async () => {
     try {
@@ -92,7 +85,7 @@ function PersonalInfo() {
       alert("Cập nhật thành công");
       setIsEditing(false);
 
-    } catch (err) {
+    } catch {
       alert("Cập nhật thất bại");
     }
   };
@@ -246,22 +239,6 @@ function PersonalInfo() {
               />
             </div>
 
-            <div className="pi__field">
-              <label className="pi__label">Trạng thái khóa</label>
-              <div className="pi__keyStatus">
-                <span className={`pi__badge ${profile.TinhTrang === "verified" ? "pi__badge--verified" : "pi__badge--unverified"}`}>
-                  {profile.TinhTrang === "verified" ? "Đã xác minh" : "Chưa xác minh"}
-                </span>
-                <button 
-                  type="button" 
-                  className="pi__verifyBtn"
-                  onClick={handleVerify}
-                  disabled={loading}
-                >
-                  Xác minh
-                </button>
-              </div>
-            </div>
           </div>
         </div>
 

@@ -1754,6 +1754,157 @@ app.use((req, res, next) => {
 });
 
 // API lấy lịch sử đăng nhập: dùng ở Dashboard sinh viên
+// Hồ sơ của tài khoản đang đăng nhập. Dữ liệu được xác định hoàn toàn từ
+// session để người dùng không thể truyền mã của tài khoản khác.
+app.get("/api/profile/me", async (req, res) => {
+  try {
+    const auth = getAuthUser(req);
+
+    if (auth.isStudent) {
+      const rows = await queryAsync(
+        `
+          SELECT TOP 1
+            LTRIM(RTRIM(sv.MaSV)) AS id,
+            sv.HoTen AS fullName,
+            sv.Email AS email,
+            LTRIM(RTRIM(sv.MaLop)) AS classId,
+            lop.TenLop AS className,
+            LTRIM(RTRIM(sv.Khoa)) AS facultyId,
+            khoa.TENKHOA AS facultyName
+          FROM dbo.SINH_VIEN sv
+          LEFT JOIN dbo.LOP lop
+            ON UPPER(LTRIM(RTRIM(lop.MaLop))) = UPPER(LTRIM(RTRIM(sv.MaLop)))
+          LEFT JOIN dbo.KHOA khoa
+            ON UPPER(LTRIM(RTRIM(khoa.MAKHOA))) = UPPER(LTRIM(RTRIM(sv.Khoa)))
+          WHERE UPPER(LTRIM(RTRIM(sv.MaSV))) = UPPER(?)
+        `,
+        [auth.relatedId || auth.username]
+      );
+
+      if (!rows.length) {
+        return res.status(404).json({ message: "Không tìm thấy thông tin sinh viên" });
+      }
+
+      return res.json({ role: auth.roleName, username: auth.username, ...rows[0] });
+    }
+
+    if (auth.isTeacher) {
+      const rows = await queryAsync(
+        `
+          SELECT TOP 1
+            LTRIM(RTRIM(gv.MaGV)) AS id,
+            gv.HoTen AS fullName,
+            gv.Email AS email,
+            LTRIM(RTRIM(gv.MAKHOA)) AS facultyId,
+            khoa.TENKHOA AS facultyName
+          FROM dbo.GIANG_VIEN gv
+          LEFT JOIN dbo.KHOA khoa
+            ON UPPER(LTRIM(RTRIM(khoa.MAKHOA))) = UPPER(LTRIM(RTRIM(gv.MAKHOA)))
+          WHERE UPPER(LTRIM(RTRIM(gv.MaGV))) = UPPER(?)
+        `,
+        [auth.relatedId || auth.username]
+      );
+
+      if (!rows.length) {
+        return res.status(404).json({ message: "Không tìm thấy thông tin giảng viên" });
+      }
+
+      return res.json({ role: auth.roleName, username: auth.username, ...rows[0] });
+    }
+
+    const rows = await queryAsync(
+      `
+        SELECT TOP 1 USERNAME AS username, Email AS email
+        FROM dbo.TAIKHOAN
+        WHERE UPPER(LTRIM(RTRIM(USERNAME))) = UPPER(?)
+      `,
+      [auth.username]
+    );
+
+    return res.json({
+      role: auth.roleName,
+      username: rows[0]?.username || auth.username,
+      email: rows[0]?.email || "",
+    });
+  } catch (err) {
+    console.error("Lỗi lấy hồ sơ tài khoản:", err);
+    return res.status(500).json({ message: "Không thể tải thông tin tài khoản" });
+  }
+});
+
+// Đổi mật khẩu đăng nhập cho mọi vai trò. Đây là mật khẩu TAIKHOAN, hoàn toàn
+// độc lập với PIN dùng cho CRT nên không phát sinh mã hóa lại điểm.
+app.post("/api/account/change-password", async (req, res) => {
+  try {
+    const auth = getAuthUser(req);
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    const confirmPassword = String(req.body?.confirmPassword || "");
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ message: "Vui lòng nhập đầy đủ thông tin" });
+    }
+
+    if (newPassword.length < 6 || newPassword.length > 100) {
+      return res.status(400).json({ message: "Mật khẩu mới phải có từ 6 đến 100 ký tự" });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: "Mật khẩu mới và xác nhận mật khẩu không khớp" });
+    }
+
+    if (newPassword === currentPassword) {
+      return res.status(400).json({ message: "Mật khẩu mới phải khác mật khẩu hiện tại" });
+    }
+
+    const accountRows = await queryAsync(
+      `
+        SELECT TOP 1
+          CASE
+            WHEN PASSWORD_HASH = CONVERT(
+              VARCHAR(64),
+              HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)),
+              2
+            ) THEN 1
+            ELSE 0
+          END AS PasswordMatched
+        FROM dbo.TAIKHOAN
+        WHERE UPPER(LTRIM(RTRIM(USERNAME))) = UPPER(?)
+      `,
+      [currentPassword, auth.username]
+    );
+
+    if (!accountRows.length) {
+      return res.status(404).json({ message: "Không tìm thấy tài khoản đăng nhập" });
+    }
+
+    if (Number(accountRows[0].PasswordMatched) !== 1) {
+      return res.status(400).json({ message: "Mật khẩu hiện tại không đúng" });
+    }
+
+    await queryAsync(
+      `
+        UPDATE dbo.TAIKHOAN
+        SET PASSWORD_HASH = CONVERT(
+          VARCHAR(64),
+          HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)),
+          2
+        )
+        WHERE UPPER(LTRIM(RTRIM(USERNAME))) = UPPER(?)
+      `,
+      [newPassword, auth.username]
+    );
+
+    return res.json({
+      success: true,
+      message: "Đổi mật khẩu đăng nhập thành công",
+    });
+  } catch (err) {
+    console.error("Lỗi đổi mật khẩu đăng nhập:", err);
+    return res.status(500).json({ message: "Lỗi máy chủ khi đổi mật khẩu đăng nhập" });
+  }
+});
+
 app.get("/api/login-history", (req, res) => {
   if (!req.session?.user) {
     return res.status(401).json({

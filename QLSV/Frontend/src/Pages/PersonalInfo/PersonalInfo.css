@@ -131,54 +131,6 @@
   font-style: italic;
 }
 
-/* ========== KEY STATUS ========== */
-.pi__keyStatus {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.pi__badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 14px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.pi__badge--verified {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.pi__badge--unverified {
-  background: #f1f5f9;
-  color: #334155;
-}
-
-.pi__verifyBtn {
-  padding: 8px 28px;
-  background: #3b82f6;
-  color: #fff;
-  border: none;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.pi__verifyBtn:hover {
-  background: #2563eb;
-}
-
-.pi__verifyBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 /* ========== EDIT BUTTON ========== */
 .pi__editBtn {
   margin-top: 28px;
@@ -232,9 +184,6 @@
     max-width: none;
   }
 
-  .pi__keyStatus {
-    width: 100%;
-  }
 }
 
 @media (max-width: 480px) {
