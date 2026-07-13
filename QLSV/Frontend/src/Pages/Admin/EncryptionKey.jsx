@@ -164,7 +164,13 @@ function AdminEncryptionKey() {
     <div className="admin-ek">
       <div className="admin-ek__grid">
         <section className="card admin-ek__logs">
-          <div className="admin-ek__title">Lịch sử đổi mã PIN gần đây</div>
+          <div className="admin-ek__sectionHead">
+            <div>
+              <div className="admin-ek__eyebrow">Bảo mật giảng viên</div>
+              <div className="admin-ek__title">Lịch sử đổi mã PIN gần đây</div>
+            </div>
+            <span className="admin-ek__count">{logs.length} bản ghi</span>
+          </div>
 
           <div className="admin-ek__logsTable">
             <div className="admin-ek__logsHead">
@@ -201,7 +207,12 @@ function AdminEncryptionKey() {
         </section>
 
         <section className="card admin-ek__change">
-          <div className="admin-ek__title">Đổi mã PIN giảng viên</div>
+          <div className="admin-ek__sectionHead">
+            <div>
+              <div className="admin-ek__eyebrow">Mã PIN CRT</div>
+              <div className="admin-ek__title">Đổi mã PIN giảng viên</div>
+            </div>
+          </div>
 
           <form className="admin-ek__form" onSubmit={submit}>
             <label className="admin-ek__field">

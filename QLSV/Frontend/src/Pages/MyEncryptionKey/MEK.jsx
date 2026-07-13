@@ -164,8 +164,12 @@ function EncryptionKey() {
       <div className="ek__grid">
         {/* Logs */}
         <section className="card ek__logs">
-          <div className="ek__title two">
-            Nhật ký đổi PIN gần đây
+          <div className="ek__sectionHead">
+            <div>
+              <div className="ek__eyebrow">Bảo mật tài khoản</div>
+              <div className="ek__title">Nhật ký đổi PIN gần đây</div>
+            </div>
+            <span className="ek__count">{logs.length} bản ghi</span>
           </div>
 
           <div className="ek__logsTable">
@@ -206,12 +210,16 @@ function EncryptionKey() {
 
         {/* Change PIN */}
         <section className="card ek__change">
-          <div className="ek__title">
-            Đổi PIN của bạn
+          <div className="ek__sectionHead">
+            <div>
+              <div className="ek__eyebrow">Mã PIN CRT</div>
+              <div className="ek__title">Đổi PIN của bạn</div>
+            </div>
           </div>
 
           <form className="ek__form" onSubmit={submit}>
             <label className="ek__field">
+              <span>PIN hiện tại</span>
               <input
                 type="password"
                 name="current"
@@ -222,6 +230,7 @@ function EncryptionKey() {
             </label>
 
             <label className="ek__field">
+              <span>PIN mới</span>
               <input
                 type="password"
                 name="next"
@@ -232,6 +241,7 @@ function EncryptionKey() {
             </label>
 
             <label className="ek__field">
+              <span>Xác nhận PIN mới</span>
               <input
                 type="password"
                 name="confirm"
