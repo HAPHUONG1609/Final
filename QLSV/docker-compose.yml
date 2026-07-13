@@ -27,7 +27,7 @@ services:
         echo 'Waiting for SQL Server...';
         sleep 5;
       done;
-      if /opt/mssql-tools/bin/sqlcmd -S db -U sa -P \"$${MSSQL_SA_PASSWORD}\" -h -1 -W -Q \"IF DB_ID('QLSV_AT') IS NOT NULL SELECT 1 ELSE SELECT 0\" | grep -q 1; then
+      if /opt/mssql-tools/bin/sqlcmd -S db -U sa -P \"$${MSSQL_SA_PASSWORD}\" -h -1 -W -Q \"SET NOCOUNT ON; IF DB_ID(N'QLSV_AT') IS NOT NULL SELECT N'EXISTS' ELSE SELECT N'MISSING'\" | grep -q '^EXISTS$'; then
         echo 'Database QLSV_AT already exists, skip init.';
         exit 0;
       fi;
