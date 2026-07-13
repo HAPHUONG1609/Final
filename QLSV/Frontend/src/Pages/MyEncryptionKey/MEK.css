@@ -122,7 +122,6 @@
 
 /* change pin card */
 .ek__change {
-  grid-column: 1 / 2;  
   padding: 46px;
 }
 .ek__form {
@@ -184,8 +183,5 @@
   }
   .ek__grid {
     grid-template-columns: 1fr;
-  }
-  .ek__change {
-    grid-column: auto;
   }
 }

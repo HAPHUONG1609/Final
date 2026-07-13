@@ -139,7 +139,6 @@
 }
 
 .admin-ek__change {
-  grid-column: 1 / 2;
   padding: 24px;
 }
 
@@ -207,7 +206,4 @@
     grid-template-columns: 1fr;
   }
 
-  .admin-ek__change {
-    grid-column: auto;
-  }
 }

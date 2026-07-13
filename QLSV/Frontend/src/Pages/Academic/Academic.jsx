@@ -275,56 +275,6 @@ function Academic() {
     });
   }, [courses, q]);
 
-  const semesterSummary = useMemo(() => {
-    if (!decrypted) {
-      return {
-        gpa: null,
-        totalCredits: 0,
-        countedCourses: 0,
-      };
-    }
-
-    let totalGpaPoints = 0;
-    let totalCredits = 0;
-    let countedCourses = 0;
-
-    courses.forEach((c) => {
-      if (c.error) return;
-
-      const finalGrade =
-        c.DiemTrungBinh ??
-        c.average ??
-        c.DiemThat ??
-        c.Diem ??
-        null;
-
-      const score10 = Number(finalGrade);
-      const credits = Number(c.SoTinChi || 0);
-
-      if (Number.isFinite(score10) && credits > 0) {
-        const score4 = (score10 / 10) * 4;
-
-        totalGpaPoints += score4 * credits;
-        totalCredits += credits;
-        countedCourses += 1;
-      }
-    });
-
-    if (!totalCredits) {
-      return {
-        gpa: null,
-        totalCredits: 0,
-        countedCourses: 0,
-      };
-    }
-
-    return {
-      gpa: (totalGpaPoints / totalCredits).toFixed(2),
-      totalCredits,
-      countedCourses,
-    };
-  }, [courses, decrypted]);
-
   const handleDecrypt = async () => {
     const pinClean = String(pin || "").trim();
 

@@ -35,7 +35,6 @@ const emptyForm = {
   fullName: "",
   email: "",
   status: "Đang học",
-  keyStatus: "Not yet",
   ngaysinh: "",
   noisinh: "",
   gioitinh: "",
@@ -413,7 +412,7 @@ export default function ManageStudentInformation() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "110px 110px 120px 1.2fr 1.3fr 120px 140px 160px",
+            gridTemplateColumns: "110px 110px 120px 1.2fr 1.3fr 120px 160px",
             padding: "12px 12px",
             background: "#151a22",
             fontWeight: 600,
@@ -426,7 +425,6 @@ export default function ManageStudentInformation() {
           <div>Họ và tên</div>
           <div>Email</div>
           <div>Trạng thái</div>
-          <div>Trạng thái khóa</div>
           <div>Thao tác</div>
         </div>
 
@@ -440,7 +438,7 @@ export default function ManageStudentInformation() {
               key={r.studentId}
               style={{
                 display: "grid",
-                gridTemplateColumns: "110px 110px 120px 1.2fr 1.3fr 120px 140px 160px",
+                gridTemplateColumns: "110px 110px 120px 1.2fr 1.3fr 120px 160px",
                 padding: "12px 12px",
                 borderTop: "1px solid #222",
               }}
@@ -454,16 +452,6 @@ export default function ManageStudentInformation() {
               <div>
                 <Badge tone={r.status === "Đang học" ? "success" : "danger"}>
                   {r.status}
-                </Badge>
-              </div>
-
-              <div>
-                <Badge tone={r.keyStatus === "Generated" ? "info" : "neutral"}>
-                  {r.keyStatus === "Generated"
-                    ? "Đã tạo"
-                    : r.keyStatus === "Not yet"
-                    ? "Chưa tạo"
-                    : r.keyStatus}
                 </Badge>
               </div>
 
@@ -661,16 +649,6 @@ export default function ManageStudentInformation() {
                 <option value="Đang học">Đang học</option>
                 <option value="Bảo lưu">Bảo lưu</option>
                 <option value="Đã nghỉ">Đã nghỉ</option>
-              </select>
-
-              <select
-                value={form.keyStatus}
-                onChange={(e) => handleChange("keyStatus", e.target.value)}
-                style={inputStyle}
-                disabled
-              >
-                <option value="Generated">Đã tạo</option>
-                <option value="Not yet">Chưa tạo</option>
               </select>
             </div>
 

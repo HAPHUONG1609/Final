@@ -3,13 +3,6 @@ import "./EncryptionKey.css";
 import { API_BASE } from "../../utils/auth.js";
 
 function AdminEncryptionKey() {
-  const keyInfo = {
-    status: "Đang hoạt động",
-    keyId: "LPIN-2024-001-A",
-    generatedAt: "2024-01-15",
-    expiryAt: "2025-01-15",
-  };
-
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(true);
   const [logsError, setLogsError] = useState("");
@@ -170,31 +163,6 @@ function AdminEncryptionKey() {
   return (
     <div className="admin-ek">
       <div className="admin-ek__grid">
-        <section className="card admin-ek__status">
-          <div className="admin-ek__statusHeader">
-            <div>
-              <div className="admin-ek__eyebrow">Bảo mật giảng viên</div>
-              <div className="admin-ek__title admin-ek__title--compact">Trạng thái mã PIN</div>
-            </div>
-            <span className="badge badge--ok">{keyInfo.status}</span>
-          </div>
-
-          <ul className="admin-ek__kv">
-            <li>
-              <span>PIN ID</span>
-              <strong className="mono">{keyInfo.keyId}</strong>
-            </li>
-            <li>
-              <span>Ngày tạo</span>
-              <strong>{keyInfo.generatedAt}</strong>
-            </li>
-            <li>
-              <span>Ngày hết hạn</span>
-              <strong>{keyInfo.expiryAt}</strong>
-            </li>
-          </ul>
-        </section>
-
         <section className="card admin-ek__logs">
           <div className="admin-ek__title">Lịch sử đổi mã PIN gần đây</div>
 

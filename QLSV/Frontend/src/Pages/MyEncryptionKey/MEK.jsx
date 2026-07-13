@@ -3,13 +3,6 @@ import "./MEK.css";
 import { API_BASE } from "../../utils/auth.js";
 
 function EncryptionKey() {
-  const keyInfo = {
-    status: "Đang hoạt động",
-    keyId: "EK-2024-001-A",
-    generatedAt: "2024-01-15",
-    expiryAt: "2025-01-15",
-  };
-
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(true);
   const [logsError, setLogsError] = useState("");
@@ -169,37 +162,6 @@ function EncryptionKey() {
   return (
     <div className="ek">
       <div className="ek__grid">
-        {/* Key status */}
-        <section className="card ek__status">
-          <div className="ek__statusHeader">
-            <div className="ek__title one">
-              Trạng thái khóa mã hóa
-            </div>
-            <span className="badge badge--ok">
-              {keyInfo.status}
-            </span>
-          </div>
-
-          <ul className="ek__kv">
-            <li>
-              <span>Mã khóa:</span>
-              <strong className="mono">
-                {keyInfo.keyId}
-              </strong>
-            </li>
-
-            <li>
-              <span>Ngày tạo:</span>
-              <strong>{keyInfo.generatedAt}</strong>
-            </li>
-
-            <li>
-              <span>Ngày hết hạn:</span>
-              <strong>{keyInfo.expiryAt}</strong>
-            </li>
-          </ul>
-        </section>
-
         {/* Logs */}
         <section className="card ek__logs">
           <div className="ek__title two">

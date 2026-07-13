@@ -413,9 +413,7 @@ const handleSave = async () => {
                   fontWeight: 600,
                 }}
               >
-                Cancel
-                              Hủy
-                {isEdit ? "Lưu thay đổi" : "Thêm sinh viên"}
+                Hủy
               </button>
               <button
                 onClick={handleSave}
@@ -430,7 +428,7 @@ const handleSave = async () => {
                   fontWeight: 600,
                 }}
               >
-                Save Changes
+                Lưu thay đổi
               </button>
             </div>
           </div>

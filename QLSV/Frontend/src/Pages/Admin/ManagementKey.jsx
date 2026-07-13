@@ -4,6 +4,12 @@ import { API_BASE } from "../../utils/auth.js";
 
 const ITEMS_PER_PAGE = 5;
 
+const getStatusLabel = (status) => {
+  if (status === "Active") return "Hoạt động";
+  if (status === "Expired") return "Hết hạn";
+  return status || "Không rõ";
+};
+
 function ManagementKey() {
   // Dữ liệu khóa khoa
   const [facultyKeys, setFacultyKeys] = useState([
@@ -30,8 +36,8 @@ function ManagementKey() {
   ]);
 
   // Tìm kiếm & lọc
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
+  const [, setLoading] = useState(false);
+  const [, setErr] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -49,16 +55,6 @@ function ManagementKey() {
     activeKeys: facultyKeys.filter(f => f.status === "Active").length,
     expiredKeys: facultyKeys.filter(f => f.status === "Expired").length,
   };
-
-  const getStatusBadge = (status) => {
-    switch (status.toLowerCase()) {
-      case "active": return "text-green-400";
-      case "expired": return "text-red-400";
-      case "pending": return "text-yellow-400";
-      default: return "text-slate-400";
-    }
-  };
-
 
   useEffect(() => {
   const loadFaculty = async () => {
@@ -91,10 +87,6 @@ function ManagementKey() {
   loadFaculty();
 }, []);
   
-  const handleVerify = () => {
-    console.log("Đã bấm xác minh khóa");
-  };
-
   const openAddModal = () => {
     setIsEdit(false);
     setEditForm({ maKhoa: "", tenKhoa: "", status: "Active" });
@@ -383,7 +375,7 @@ function ManagementKey() {
                       background: key.status === "Active" ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
                       color: key.status === "Active" ? "#4ade80" : "#f87171",
                     }}>
-                      {key.status}
+                      {getStatusLabel(key.status)}
                     </span>
                   </td>
                   <td style={tdStyle}>

@@ -1,0 +1,39 @@
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# JavaScript dependencies and build output
+**/node_modules/
+**/dist/
+**/coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Java/Maven build output
+**/target/
+**/*.class
+
+# IDE and operating-system files
+.idea/
+.vscode/
+*.iml
+*.suo
+*.swp
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+~$*
+
+# Generated prime-number datasets (the application uses table SNT from SQL)
+/QLSV/clean.txt
+/QLSV/final.txt
+/QLSV/primes.txt
+
