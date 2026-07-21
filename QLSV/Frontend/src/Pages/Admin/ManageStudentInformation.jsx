@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Pagination from "../../components/Pagination/Pagination";
 import { API_BASE } from "../../utils/auth.js";
+import { confirmAction } from "../../utils/notification.js";
 
 const ITEMS_PER_PAGE = 5;
 
@@ -277,7 +278,12 @@ export default function ManageStudentInformation() {
   };
 
   const handleDelete = async (studentId) => {
-    const ok = window.confirm(`Bạn có chắc muốn xóa sinh viên ${studentId} không?`);
+    const ok = await confirmAction({
+      title: "Xóa sinh viên",
+      message: `Bạn có chắc muốn xóa sinh viên ${studentId} không? Thao tác này không thể hoàn tác.`,
+      confirmText: "Xóa sinh viên",
+      danger: true,
+    });
     if (!ok) return;
 
     try {
@@ -509,12 +515,17 @@ export default function ManageStudentInformation() {
             alignItems: "center",
             justifyContent: "center",
             zIndex: 999,
+            padding: 16,
+            boxSizing: "border-box",
+            overflowY: "auto",
           }}
         >
           <div
             style={{
-              width: 720,
-              maxWidth: "95%",
+              width: "min(720px, 100%)",
+              maxHeight: "calc(100vh - 32px)",
+              overflowY: "auto",
+              boxSizing: "border-box",
               background: "#111827",
               borderRadius: 16,
               padding: 24,
@@ -529,7 +540,7 @@ export default function ManageStudentInformation() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                 gap: 12,
               }}
             >
@@ -696,6 +707,9 @@ export default function ManageStudentInformation() {
 }
 
 const inputStyle = {
+  width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
   padding: "10px 12px",
   borderRadius: 8,
   border: "1px solid #374151",

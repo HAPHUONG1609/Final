@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Pagination from "../../components/Pagination/Pagination";
 import { API_BASE } from "../../utils/auth.js";
+import { confirmAction } from "../../utils/notification.js";
 
 const ITEMS_PER_PAGE = 5;
 
@@ -196,7 +197,12 @@ function ManagementKey() {
 };
 
   const handleDelete = async (maKhoa) => {
-  const ok = window.confirm(`Bạn có chắc muốn xóa khoa "${maKhoa}" không?`);
+  const ok = await confirmAction({
+    title: "Xóa khoa",
+    message: `Bạn có chắc muốn xóa khoa "${maKhoa}" không? Dữ liệu liên quan có thể bị ảnh hưởng.`,
+    confirmText: "Xóa khoa",
+    danger: true,
+  });
   if (!ok) return;
 
   try {

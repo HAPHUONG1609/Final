@@ -206,6 +206,93 @@ function queryAsync(query, params = []) {
   });
 }
 
+let adminAuditTablePromise = null;
+
+function ensureAdminAuditLogTable() {
+  if (!adminAuditTablePromise) {
+    adminAuditTablePromise = queryAsync(`
+      IF OBJECT_ID('dbo.ADMIN_AUDIT_LOG', 'U') IS NULL
+      BEGIN
+        CREATE TABLE dbo.ADMIN_AUDIT_LOG (
+          ID BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+          USERNAME VARCHAR(50) NOT NULL,
+          ACTION_CODE VARCHAR(50) NOT NULL,
+          ACTION_LABEL NVARCHAR(200) NOT NULL,
+          ENTITY_TYPE VARCHAR(50) NULL,
+          ENTITY_ID NVARCHAR(100) NULL,
+          MESSAGE NVARCHAR(500) NOT NULL,
+          STATUS VARCHAR(20) NOT NULL CONSTRAINT DF_ADMIN_AUDIT_STATUS DEFAULT ('SUCCESS'),
+          IP_ADDRESS VARCHAR(64) NULL,
+          USER_AGENT NVARCHAR(300) NULL,
+          CREATED_AT DATETIME2(0) NOT NULL CONSTRAINT DF_ADMIN_AUDIT_CREATED_AT
+            DEFAULT (DATEADD(HOUR, 7, SYSUTCDATETIME()))
+        );
+      END;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE object_id = OBJECT_ID('dbo.ADMIN_AUDIT_LOG')
+          AND name = 'IX_ADMIN_AUDIT_LOG_CREATED_AT'
+      )
+      BEGIN
+        CREATE INDEX IX_ADMIN_AUDIT_LOG_CREATED_AT
+          ON dbo.ADMIN_AUDIT_LOG(CREATED_AT DESC, ID DESC);
+      END;
+    `).catch((error) => {
+      adminAuditTablePromise = null;
+      throw error;
+    });
+  }
+
+  return adminAuditTablePromise;
+}
+
+function getRequestIp(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const rawIp = forwarded || req.socket?.remoteAddress || "";
+  if (rawIp === "::1" || rawIp === "::ffff:127.0.0.1") return "127.0.0.1";
+  return rawIp.replace(/^::ffff:/, "").slice(0, 64);
+}
+
+async function recordAdminAuditLog(req, {
+  actionCode,
+  actionLabel,
+  entityType = null,
+  entityId = null,
+  message,
+  status = "SUCCESS",
+}) {
+  const auth = getAuthUser(req);
+  if (!auth.isAdmin) return;
+
+  try {
+    await ensureAdminAuditLogTable();
+    await queryAsync(
+      `
+        INSERT INTO dbo.ADMIN_AUDIT_LOG (
+          USERNAME, ACTION_CODE, ACTION_LABEL, ENTITY_TYPE, ENTITY_ID,
+          MESSAGE, STATUS, IP_ADDRESS, USER_AGENT
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        String(auth.username || "admin").slice(0, 50),
+        String(actionCode || "ADMIN_ACTION").slice(0, 50),
+        String(actionLabel || "Thao tác quản trị").slice(0, 200),
+        entityType ? String(entityType).slice(0, 50) : null,
+        entityId ? String(entityId).slice(0, 100) : null,
+        String(message || actionLabel || "Thao tác quản trị").slice(0, 500),
+        ["SUCCESS", "ERROR", "INFO"].includes(status) ? status : "INFO",
+        getRequestIp(req),
+        String(req.headers["user-agent"] || "").slice(0, 300) || null,
+      ]
+    );
+  } catch (error) {
+    // Nhật ký không được làm hỏng thao tác nghiệp vụ đã thành công.
+    console.error("Lỗi ghi nhật ký quản trị:", error);
+  }
+}
+
 function openConnectionAsync() {
   return new Promise((resolve, reject) => {
     sql.open(connectionString, (err, conn) => {
@@ -1669,7 +1756,7 @@ app.post("/login", (req, res) => {
       }
     );
 
-    req.session.save((saveErr) => {
+    req.session.save(async (saveErr) => {
       if (saveErr) {
         console.error("Lỗi lưu session đăng nhập:", saveErr);
         return res.status(500).json({
@@ -1677,6 +1764,15 @@ app.post("/login", (req, res) => {
           message: "Không thể tạo phiên đăng nhập",
         });
       }
+
+      await recordAdminAuditLog(req, {
+        actionCode: "ADMIN_LOGIN",
+        actionLabel: "Đăng nhập quản trị",
+        entityType: "SESSION",
+        entityId: tk.USERNAME,
+        message: `Quản trị viên ${tk.USERNAME} đăng nhập hệ thống`,
+        status: "INFO",
+      });
 
       return res.json({
         success: true,
@@ -1707,6 +1803,44 @@ app.get("/auth/me", requireSession, (req, res) => {
       roleCode: auth.isStudent ? 0 : auth.isAdmin ? 1 : 2,
     },
   });
+});
+
+app.get("/admin/audit-logs", async (req, res) => {
+  const auth = getAuthUser(req);
+  if (!auth.isLoggedIn) {
+    return res.status(401).json({ message: "Chưa đăng nhập" });
+  }
+  if (!auth.isAdmin) {
+    return res.status(403).json({ message: "Chỉ quản trị viên được xem nhật ký quản trị" });
+  }
+
+  const requestedLimit = Number.parseInt(req.query.limit, 10);
+  const limit = Math.min(100, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 10));
+
+  try {
+    await ensureAdminAuditLogTable();
+    const rows = await queryAsync(
+      `
+        SELECT TOP (${limit})
+          ID AS id,
+          USERNAME AS username,
+          ACTION_CODE AS actionCode,
+          ACTION_LABEL AS actionLabel,
+          ENTITY_TYPE AS entityType,
+          ENTITY_ID AS entityId,
+          MESSAGE AS message,
+          STATUS AS status,
+          IP_ADDRESS AS ipAddress,
+          CONVERT(VARCHAR(19), CREATED_AT, 120) AS time
+        FROM dbo.ADMIN_AUDIT_LOG
+        ORDER BY CREATED_AT DESC, ID DESC
+      `
+    );
+    return res.json(rows);
+  } catch (error) {
+    console.error("Lỗi lấy nhật ký quản trị:", error);
+    return res.status(500).json({ message: "Không tải được nhật ký quản trị" });
+  }
 });
 
 // Tất cả API nghiệp vụ phía dưới đều bắt buộc phải còn session đăng nhập.
@@ -3466,11 +3600,27 @@ app.post("/admin/student", (req, res) => {
     nganhDT || null,
     khoa,
     chuyennganh || null,
-    (err) => {
+    async (err) => {
       if (err) {
         console.error("Lỗi thêm sinh viên:", err);
+        await recordAdminAuditLog(req, {
+          actionCode: "STUDENT_CREATE",
+          actionLabel: "Thêm sinh viên",
+          entityType: "SINH_VIEN",
+          entityId: mssv,
+          message: `Thêm sinh viên ${mssv} thất bại: ${err.message}`,
+          status: "ERROR",
+        });
         return res.status(500).json({ message: err.message });
       }
+
+      await recordAdminAuditLog(req, {
+        actionCode: "STUDENT_CREATE",
+        actionLabel: "Thêm sinh viên",
+        entityType: "SINH_VIEN",
+        entityId: mssv,
+        message: `Đã thêm sinh viên ${mssv} - ${hoten}`,
+      });
 
       res.status(201).json({
         message: "Thêm sinh viên thành công",
@@ -3545,11 +3695,27 @@ app.put("/admin/student/update", (req, res) => {
       chuyennganh || null,
       tinhtrang || "Đang học",
     ],
-    (err) => {
+    async (err) => {
       if (err) {
         console.error("Lỗi sửa sinh viên:", err);
+        await recordAdminAuditLog(req, {
+          actionCode: "STUDENT_UPDATE",
+          actionLabel: "Cập nhật sinh viên",
+          entityType: "SINH_VIEN",
+          entityId: mssv,
+          message: `Cập nhật sinh viên ${mssv} thất bại: ${err.message}`,
+          status: "ERROR",
+        });
         return res.status(500).json({ message: err.message });
       }
+
+      await recordAdminAuditLog(req, {
+        actionCode: "STUDENT_UPDATE",
+        actionLabel: "Cập nhật sinh viên",
+        entityType: "SINH_VIEN",
+        entityId: mssv,
+        message: `Đã cập nhật thông tin sinh viên ${mssv}`,
+      });
 
       res.json({
         message: `Cập nhật sinh viên ${mssv} thành công`,
@@ -3581,11 +3747,27 @@ app.put("/admin/student/quick-update", (req, res) => {
     connectionString, 
     query, 
     [facultyId, malop, tinhtrang, mssv], 
-    (err, result) => {
+    async (err, result) => {
       if (err) {
         console.error("Lỗi cập nhật nhanh:", err);
+        await recordAdminAuditLog(req, {
+          actionCode: "STUDENT_QUICK_UPDATE",
+          actionLabel: "Cập nhật nhanh sinh viên",
+          entityType: "SINH_VIEN",
+          entityId: mssv,
+          message: `Cập nhật nhanh sinh viên ${mssv} thất bại: ${err.message}`,
+          status: "ERROR",
+        });
         return res.status(500).json({ message: "Lỗi cơ sở dữ liệu: " + err.message });
       }
+
+      await recordAdminAuditLog(req, {
+        actionCode: "STUDENT_QUICK_UPDATE",
+        actionLabel: "Cập nhật nhanh sinh viên",
+        entityType: "SINH_VIEN",
+        entityId: mssv,
+        message: `Đã cập nhật khoa ${facultyId}, lớp ${malop} và trạng thái của sinh viên ${mssv}`,
+      });
 
       res.json({ 
         message: `Cập nhật sinh viên ${mssv} thành công!`,
@@ -3649,11 +3831,27 @@ app.delete("/admin/student/delete", (req, res) => {
 
   const sp = `EXEC sp_XoaSinhVien @MaSV = ?`;
 
-  sql.query(connectionString, sp, [mssv], (err, result) => {
+  sql.query(connectionString, sp, [mssv], async (err, result) => {
     if (err) {
       console.error("Lỗi xóa sinh viên:", err);
+      await recordAdminAuditLog(req, {
+        actionCode: "STUDENT_DELETE",
+        actionLabel: "Xóa sinh viên",
+        entityType: "SINH_VIEN",
+        entityId: mssv,
+        message: `Xóa sinh viên ${mssv} thất bại: ${err.message}`,
+        status: "ERROR",
+      });
       return res.status(500).json({ message: err.message });
     }
+
+    await recordAdminAuditLog(req, {
+      actionCode: "STUDENT_DELETE",
+      actionLabel: "Xóa sinh viên",
+      entityType: "SINH_VIEN",
+      entityId: mssv,
+      message: `Đã xóa sinh viên ${mssv}`,
+    });
 
     res.json({
       message: `Đã xóa sinh viên ${mssv}`,
@@ -3789,6 +3987,14 @@ app.post("/admin/fac", async (req, res) => {
     // Lưu kết quả vào DB
     await saveResultToDB(result);
 
+    await recordAdminAuditLog(req, {
+      actionCode: "FACULTY_CREATE",
+      actionLabel: "Thêm khoa",
+      entityType: "KHOA",
+      entityId: MaKhoa,
+      message: `Đã thêm khoa ${MaKhoa} - ${TenKhoa}`,
+    });
+
     // Trả kết quả cho client
     return res.status(201).json({
       message: "Thêm khoa thành công",
@@ -3796,6 +4002,14 @@ app.post("/admin/fac", async (req, res) => {
     });
   } catch (e) {
     console.error("Lỗi thêm khoa:", e);
+    await recordAdminAuditLog(req, {
+      actionCode: "FACULTY_CREATE",
+      actionLabel: "Thêm khoa",
+      entityType: "KHOA",
+      entityId: MaKhoa,
+      message: `Thêm khoa ${MaKhoa} thất bại: ${e.message}`,
+      status: "ERROR",
+    });
     return res.status(500).json({
       message: "Lỗi thêm khoa hoặc xử lý crypto",
     });
@@ -3821,11 +4035,27 @@ app.put("/admin/fac/update", (req, res) => {
       @TenKhoa = ?
   `;
 
-  sql.query(connectionString, sp, [MaKhoa, TenKhoa || null], (err, result) => {
+  sql.query(connectionString, sp, [MaKhoa, TenKhoa || null], async (err, result) => {
     if (err) {
       console.error("Lỗi sửa khoa:", err);
+      await recordAdminAuditLog(req, {
+        actionCode: "FACULTY_UPDATE",
+        actionLabel: "Cập nhật khoa",
+        entityType: "KHOA",
+        entityId: MaKhoa,
+        message: `Cập nhật khoa ${MaKhoa} thất bại: ${err.message}`,
+        status: "ERROR",
+      });
       return res.status(500).json({ message: err.message });
     }
+
+    await recordAdminAuditLog(req, {
+      actionCode: "FACULTY_UPDATE",
+      actionLabel: "Cập nhật khoa",
+      entityType: "KHOA",
+      entityId: MaKhoa,
+      message: `Đã cập nhật khoa ${MaKhoa}${TenKhoa ? ` - ${TenKhoa}` : ""}`,
+    });
 
     res.json({
       message: `Cập nhật khoa ${MaKhoa} thành công`,
@@ -3848,11 +4078,27 @@ app.delete("/admin/fac/delete", (req, res) => {
 
   const sp = `EXEC sp_XoaKhoa @MaKhoa = ?`;
 
-  sql.query(connectionString, sp, [MaKhoa], (err, result) => {
+  sql.query(connectionString, sp, [MaKhoa], async (err, result) => {
     if (err) {
       console.error("Lỗi xóa khoa:", err);
+      await recordAdminAuditLog(req, {
+        actionCode: "FACULTY_DELETE",
+        actionLabel: "Xóa khoa",
+        entityType: "KHOA",
+        entityId: MaKhoa,
+        message: `Xóa khoa ${MaKhoa} thất bại: ${err.message}`,
+        status: "ERROR",
+      });
       return res.status(500).json({ message: err.message });
     }
+
+    await recordAdminAuditLog(req, {
+      actionCode: "FACULTY_DELETE",
+      actionLabel: "Xóa khoa",
+      entityType: "KHOA",
+      entityId: MaKhoa,
+      message: `Đã xóa khoa ${MaKhoa}`,
+    });
 
     res.json({
       message: `Đã xóa khoa ${MaKhoa}`,
@@ -3891,8 +4137,20 @@ app.post("/admin/hocphan", (req, res) => {
     giangvien || null,
     ngaybatdau || null,
     ngayketthuc || null,
-    (err) => {
-      if (err) return res.status(500).json({ message: err.message });
+    async (err) => {
+      if (err) {
+        await recordAdminAuditLog(req, {
+          actionCode: "COURSE_CREATE", actionLabel: "Thêm học phần",
+          entityType: "HOC_PHAN", entityId: mahp,
+          message: `Thêm học phần ${mahp} thất bại: ${err.message}`, status: "ERROR",
+        });
+        return res.status(500).json({ message: err.message });
+      }
+      await recordAdminAuditLog(req, {
+        actionCode: "COURSE_CREATE", actionLabel: "Thêm học phần",
+        entityType: "HOC_PHAN", entityId: mahp,
+        message: `Đã thêm học phần ${mahp} - ${tenhp}`,
+      });
       res.status(201).json({ message: `Đã thêm học phần ${mahp}` });
     },
   );
@@ -3924,8 +4182,20 @@ app.put("/admin/hocphan", (req, res) => {
     giangvien || null,
     ngaybatdau || null,
     ngayketthuc || null,
-    (err) => {
-      if (err) return res.status(500).json({ message: err.message });
+    async (err) => {
+      if (err) {
+        await recordAdminAuditLog(req, {
+          actionCode: "COURSE_UPDATE", actionLabel: "Cập nhật học phần",
+          entityType: "HOC_PHAN", entityId: mahp,
+          message: `Cập nhật học phần ${mahp} thất bại: ${err.message}`, status: "ERROR",
+        });
+        return res.status(500).json({ message: err.message });
+      }
+      await recordAdminAuditLog(req, {
+        actionCode: "COURSE_UPDATE", actionLabel: "Cập nhật học phần",
+        entityType: "HOC_PHAN", entityId: mahp,
+        message: `Đã cập nhật học phần ${mahp}`,
+      });
       res.json({ message: `Đã cập nhật học phần ${mahp}` });
     },
   );
@@ -3936,8 +4206,20 @@ app.delete("/admin/hocphan", (req, res) => {
   const { mahp } = req.body;
   if (!mahp) return res.status(400).json({ message: "Thiếu mahp" });
 
-  deleteHocPhan(mahp, (err) => {
-    if (err) return res.status(500).json({ message: err.message });
+  deleteHocPhan(mahp, async (err) => {
+    if (err) {
+      await recordAdminAuditLog(req, {
+        actionCode: "COURSE_DELETE", actionLabel: "Xóa học phần",
+        entityType: "HOC_PHAN", entityId: mahp,
+        message: `Xóa học phần ${mahp} thất bại: ${err.message}`, status: "ERROR",
+      });
+      return res.status(500).json({ message: err.message });
+    }
+    await recordAdminAuditLog(req, {
+      actionCode: "COURSE_DELETE", actionLabel: "Xóa học phần",
+      entityType: "HOC_PHAN", entityId: mahp,
+      message: `Đã xóa học phần ${mahp}`,
+    });
     res.json({ message: `Đã xóa học phần ${mahp}` });
   });
 });
@@ -3951,8 +4233,20 @@ app.post("/admin/lop", (req, res) => {
     return res.status(400).json({ message: "Thiếu (malop, tenlop, makhoa)" });
   }
 
-  addLop(malop, tenlop, makhoa, (err) => {
-    if (err) return res.status(500).json({ message: err.message });
+  addLop(malop, tenlop, makhoa, async (err) => {
+    if (err) {
+      await recordAdminAuditLog(req, {
+        actionCode: "CLASS_CREATE", actionLabel: "Thêm lớp",
+        entityType: "LOP", entityId: malop,
+        message: `Thêm lớp ${malop} thất bại: ${err.message}`, status: "ERROR",
+      });
+      return res.status(500).json({ message: err.message });
+    }
+    await recordAdminAuditLog(req, {
+      actionCode: "CLASS_CREATE", actionLabel: "Thêm lớp",
+      entityType: "LOP", entityId: malop,
+      message: `Đã thêm lớp ${malop} - ${tenlop}`,
+    });
     res.status(201).json({ message: `Đã thêm lớp ${malop}` });
   });
 });
@@ -3962,8 +4256,20 @@ app.put("/admin/lop", (req, res) => {
   const { malop, tenlop, makhoa } = req.body;
   if (!malop) return res.status(400).json({ message: "Thiếu malop" });
 
-  updateLop(malop, tenlop || null, makhoa || null, (err) => {
-    if (err) return res.status(500).json({ message: err.message });
+  updateLop(malop, tenlop || null, makhoa || null, async (err) => {
+    if (err) {
+      await recordAdminAuditLog(req, {
+        actionCode: "CLASS_UPDATE", actionLabel: "Cập nhật lớp",
+        entityType: "LOP", entityId: malop,
+        message: `Cập nhật lớp ${malop} thất bại: ${err.message}`, status: "ERROR",
+      });
+      return res.status(500).json({ message: err.message });
+    }
+    await recordAdminAuditLog(req, {
+      actionCode: "CLASS_UPDATE", actionLabel: "Cập nhật lớp",
+      entityType: "LOP", entityId: malop,
+      message: `Đã cập nhật lớp ${malop}`,
+    });
     res.json({ message: `Đã cập nhật lớp ${malop}` });
   });
 });
@@ -3973,8 +4279,20 @@ app.delete("/admin/lop", (req, res) => {
   const { malop } = req.body;
   if (!malop) return res.status(400).json({ message: "Thiếu malop" });
 
-  deleteLop(malop, (err) => {
-    if (err) return res.status(500).json({ message: err.message });
+  deleteLop(malop, async (err) => {
+    if (err) {
+      await recordAdminAuditLog(req, {
+        actionCode: "CLASS_DELETE", actionLabel: "Xóa lớp",
+        entityType: "LOP", entityId: malop,
+        message: `Xóa lớp ${malop} thất bại: ${err.message}`, status: "ERROR",
+      });
+      return res.status(500).json({ message: err.message });
+    }
+    await recordAdminAuditLog(req, {
+      actionCode: "CLASS_DELETE", actionLabel: "Xóa lớp",
+      entityType: "LOP", entityId: malop,
+      message: `Đã xóa lớp ${malop}`,
+    });
     res.json({ message: `Đã xóa lớp ${malop}` });
   });
 });

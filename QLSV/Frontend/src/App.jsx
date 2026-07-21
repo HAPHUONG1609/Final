@@ -28,10 +28,12 @@ import AdminEncryptionKey from "./Pages/Admin/EncryptionKey.jsx";
 
 // Teacher layout
 import TeacherSidebar from "./components/TeacherSidebar/TeacherSidebar.jsx";
+import SystemNotification from "./components/SystemNotification/SystemNotification.jsx";
 
 export default function App() {
   return (
     <ErrorBoundary>
+      <SystemNotification />
       <BrowserRouter>
         <Routes>
           {/* ===== PUBLIC LOGIN ===== */}

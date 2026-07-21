@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { API_BASE } from "../../utils/auth.js";
+import { confirmAction } from "../../utils/notification.js";
 
 const emptyForm = {
   facultyId: "",
@@ -11,6 +12,9 @@ const emptyForm = {
 
 function AdminDashboard() {
   const [studentKeys, setStudentKeys] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(true);
+  const [logsError, setLogsError] = useState("");
 
   // Modal
   const [showModal, setShowModal] = useState(false);
@@ -75,8 +79,33 @@ function AdminDashboard() {
     }
   };
 
+  const fetchAuditLogs = async () => {
+    try {
+      setLogsLoading(true);
+      setLogsError("");
+
+      const res = await fetch(`${API_BASE}/admin/audit-logs?limit=10`, {
+        method: "GET",
+        credentials: "include",
+      });
+      const data = await parseJsonSafe(res, "admin audit logs");
+
+      if (!res.ok) {
+        throw new Error(data.message || "Không tải được nhật ký quản trị");
+      }
+
+      setLogs(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("fetchAuditLogs error:", error);
+      setLogsError(error.message || "Không tải được nhật ký quản trị");
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchRandomStudents();
+    fetchAuditLogs();
   }, []);
 
 const handleSave = async () => {
@@ -109,6 +138,7 @@ const handleSave = async () => {
         prev.map((item) => (item.studentId === form.studentId ? { ...form } : item))
       );
         alert("Đã lưu thay đổi vào hệ thống!");
+      await fetchAuditLogs();
       closeModal();
     } else {
       alert("Lỗi từ server: " + result.message);
@@ -119,26 +149,32 @@ const handleSave = async () => {
   }
 };
 
-  const handleDelete = (studentId) => {
-    const ok = window.confirm(`Bạn có chắc muốn xóa khóa của sinh viên "${studentId}" không?`);
+  const handleDelete = async (studentId) => {
+    const ok = await confirmAction({
+      title: "Xóa khóa sinh viên",
+      message: `Bạn có chắc muốn xóa khóa của sinh viên "${studentId}" không?`,
+      confirmText: "Xóa khóa",
+      danger: true,
+    });
     if (!ok) return;
     setStudentKeys((prev) => prev.filter((item) => item.studentId !== studentId));
   };
 
-  const [logs] = useState([
-    { time: "2023-10-27 10:30:01", message: "Sinh viên S123456: Đã tạo khóa thành công.", status: "Thành công" },
-    { time: "2023-10-27 10:29:55", message: "Sinh viên S654321: Mã hóa thất bại. Lỗi: PIN không hợp lệ.", status: "Lỗi" },
-    { time: "2023-10-27 10:28:10", message: "Đăng nhập quản trị từ IP 192.168.1.10.", status: "Thông tin" },
-    { time: "2023-10-27 10:27:30", message: "Sinh viên S345678: Đã cập nhật khóa.", status: "Thông tin" },
-    { time: "2023-10-27 10:26:05", message: "Đã khởi tạo sao lưu hệ thống.", status: "Thông tin" },
-  ]);
-
   const getLogStatusColor = (status) => {
-    switch (status.toLowerCase()) {
-      case "thành công": return "text-green-400";
-      case "lỗi": return "text-red-400";
-      case "thông tin": return "text-blue-400";
+    switch (String(status || "").toUpperCase()) {
+      case "SUCCESS": return "text-green-400";
+      case "ERROR": return "text-red-400";
+      case "INFO": return "text-blue-400";
       default: return "text-slate-400";
+    }
+  };
+
+  const getLogStatusLabel = (status) => {
+    switch (String(status || "").toUpperCase()) {
+      case "SUCCESS": return "Thành công";
+      case "ERROR": return "Lỗi";
+      case "INFO": return "Thông tin";
+      default: return status || "Thông tin";
     }
   };
 
@@ -260,28 +296,70 @@ const handleSave = async () => {
         </div>
       </div>
 
-      {/* Card 3: Recent Encryption Logs */}
+      {/* Card 3: Admin audit logs */}
       <div className="bg-[#0f172a]/60 rounded-[16px] p-6 shadow-lg shadow-black/10 border border-white/10">
-        <h3 className="text-lg font-semibold text-white mb-4">Recent Encryption Logs</h3>
-          <h3 className="text-lg font-semibold text-white mb-4">Nhật ký mã hóa gần đây</h3>
-        <div className="space-y-2 text-sm">
-          {logs.map((log, index) => (
-            <div key={index} className="py-2 px-3 rounded-lg hover:bg-white/5 transition-colors">
-              <span className="text-slate-500">{log.time}</span>
-              <span className="text-slate-300"> - {log.message}</span>
-              <span className="text-slate-400"> Trạng thái: </span>
-                            <span className="text-slate-400"> Trạng thái: </span>
-              <span className={`${getLogStatusColor(log.status)} font-medium`}>{log.status === "Success"
-  ? "Thành công"
-  : log.status === "Error"
-  ? "Lỗi"
-  : log.status === "Info"
-  ? "Thông tin"
-  : log.status}</span>
-              <span className="text-slate-400">.</span>
-            </div>
-          ))}
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-white">Nhật ký quản trị gần đây</h3>
+            <p className="text-xs text-slate-500 mt-1">Các thao tác được ghi tự động từ backend và lưu trong SQL Server.</p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchAuditLogs}
+            disabled={logsLoading}
+            className="px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs text-slate-300 hover:bg-white/10 disabled:opacity-50"
+          >
+            {logsLoading ? "Đang tải..." : "Làm mới"}
+          </button>
         </div>
+
+        {logsError ? (
+          <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {logsError}
+          </div>
+        ) : !logsLoading && logs.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-slate-500">
+            Chưa có thao tác quản trị nào được ghi nhận.
+          </div>
+        ) : (
+          <div className="space-y-2 text-sm">
+            {logs.map((log) => (
+              <div
+                key={log.id}
+                className="grid grid-cols-[10px_minmax(0,1fr)_auto] gap-3 items-start py-3 px-3 rounded-xl border border-transparent hover:border-white/5 hover:bg-white/5 transition-colors"
+              >
+                <span
+                  className={`mt-1.5 h-2.5 w-2.5 rounded-full ${
+                    log.status === "SUCCESS"
+                      ? "bg-green-400"
+                      : log.status === "ERROR"
+                      ? "bg-red-400"
+                      : "bg-blue-400"
+                  }`}
+                />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="font-semibold text-slate-200">{log.actionLabel}</span>
+                    <span className="text-xs text-slate-500">bởi {log.username}</span>
+                    {log.entityId && (
+                      <span className="rounded-md bg-slate-800 px-2 py-0.5 font-mono text-xs text-slate-400">
+                        {log.entityId}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-slate-400 break-words">{log.message}</p>
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-slate-600">
+                    <span>{log.time}</span>
+                    {log.ipAddress && <span>IP: {log.ipAddress}</span>}
+                  </div>
+                </div>
+                <span className={`${getLogStatusColor(log.status)} whitespace-nowrap text-xs font-semibold`}>
+                  {getLogStatusLabel(log.status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Footer */}
