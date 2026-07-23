@@ -566,6 +566,8 @@ async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, n
       maGv,
       oldC,
       newC,
+      plaintext: decrypted.plaintext,
+      oldRange: decrypted.range,
       maKhoa,
       maLop,
       newSvPublicKey,
@@ -754,6 +756,7 @@ const ACTIVE_TEACHER_PIN_CHANGE_BY_MAGV = new Map();
 const STUDENT_PIN_CHANGE_JOBS = new Map();
 const ACTIVE_STUDENT_PIN_CHANGE_BY_MSSV = new Map();
 const TEACHER_PIN_CHANGE_JOB_TTL_MS = 60 * 60 * 1000;
+const DEMO_PROOF_STUDENT_ID = "SV081";
 
 function createTeacherPinChangeJobId() {
   return `teacher-pin-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
@@ -770,11 +773,23 @@ function serializePinChangeJob(job) {
     step: job.step,
     reEncryptedGrades: job.reEncryptedGrades,
     repairedStudentPublicKeys: job.repairedStudentPublicKeys,
+    demoProof: job.demoProof,
     error: job.error,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     finishedAt: job.finishedAt,
   };
+}
+
+function pickDemoProofUpdate(updates, preferredMssv = DEMO_PROOF_STUDENT_ID) {
+  const list = Array.isArray(updates) ? updates : [];
+  const preferred = String(preferredMssv || "").trim().toUpperCase();
+  return (
+    list.find((item) => String(item?.mssv || "").trim().toUpperCase() === preferred) ||
+    list.find((item) => String(item?.subjectId || "").trim().toUpperCase() === preferred) ||
+    list[0] ||
+    null
+  );
 }
 
 function rememberTeacherPinChangeJob(job) {
@@ -796,6 +811,7 @@ function startTeacherPinChangeJob({ maGv, username, currentPin, newPin }) {
     message: "Đã nhận yêu cầu đổi PIN. Hệ thống đang chuẩn bị mã hóa lại điểm CRT.",
     reEncryptedGrades: 0,
     repairedStudentPublicKeys: 0,
+    demoProof: null,
     error: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -823,6 +839,19 @@ function startTeacherPinChangeJob({ maGv, username, currentPin, newPin }) {
 
       job.reEncryptedGrades = prepared.updates.length;
       job.repairedStudentPublicKeys = prepared.studentPublicKeyRepairs.size;
+      const demoUpdate = pickDemoProofUpdate(prepared.updates);
+      job.demoProof = demoUpdate
+        ? {
+            actor: "teacher",
+            subjectId: demoUpdate.mssv,
+            maHp: demoUpdate.maHp,
+            oldC: demoUpdate.oldC,
+            newC: demoUpdate.newC,
+            plaintext: demoUpdate.plaintext,
+            oldRange: demoUpdate.oldRange,
+            newRange: demoUpdate.newRange,
+          }
+        : null;
       job.step = "commit";
       job.updatedAt = new Date().toISOString();
       job.message = "Đang ghi PIN mới và điểm CRT mới vào database.";
@@ -930,6 +959,7 @@ function startStudentPinChangeJob({ mssv, username, currentPin, newPin }) {
     message: "Đã nhận yêu cầu đổi PIN. Hệ thống đang chuẩn bị mã hóa lại điểm CRT.",
     reEncryptedGrades: 0,
     repairedStudentPublicKeys: 0,
+    demoProof: null,
     error: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -956,6 +986,19 @@ function startStudentPinChangeJob({ mssv, username, currentPin, newPin }) {
       ]);
 
       job.reEncryptedGrades = gradeUpdates.length;
+      const demoUpdate = pickDemoProofUpdate(gradeUpdates, normalizedMssv);
+      job.demoProof = demoUpdate
+        ? {
+            actor: "student",
+            subjectId: normalizedMssv,
+            maHp: demoUpdate.maHp,
+            oldC: demoUpdate.oldC,
+            newC: demoUpdate.newC,
+            plaintext: demoUpdate.plaintext,
+            oldRange: demoUpdate.oldRange,
+            newRange: demoUpdate.newRange,
+          }
+        : null;
       job.step = "commit";
       job.updatedAt = new Date().toISOString();
       job.message = "Đang ghi PIN mới và điểm CRT mới vào database.";
@@ -2969,6 +3012,9 @@ app.post("/admin/nhap-diem", async (req, res) => {
           average
         },
         plaintext: listDiem,
+        startIndex,
+        endIndex,
+        primes,
         C
       });
     }

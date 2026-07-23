@@ -64,6 +64,7 @@ function ManageGrades() {
   const [pin, setPin] = useState("");
   const [saving, setSaving] = useState(false);
   const [importMessage, setImportMessage] = useState("");
+  const [demoProofs, setDemoProofs] = useState([]);
 
   const [loadingYears, setLoadingYears] = useState(false);
   const [loadingSemesters, setLoadingSemesters] = useState(false);
@@ -139,6 +140,7 @@ function ManageGrades() {
   useEffect(() => {
     setCurrentPage(1);
     setImportMessage("");
+    setDemoProofs([]);
   }, [currentAcademicYear, currentSemester, currentCourseId]);
 
   useEffect(() => {
@@ -713,6 +715,13 @@ function ManageGrades() {
         throw new Error(data?.message || text || "Lưu điểm thất bại");
       }
 
+      const proofRows = Array.isArray(data?.results)
+        ? data.results
+            .filter((item) => item?.status === "success" && item?.C)
+            .slice(0, 3)
+        : [];
+      setDemoProofs(proofRows);
+
       alert(data?.message || "Đã lưu và mã hóa điểm thành công!");
     } catch (error) {
       console.error("SAVE_GRADES_ERROR:", error);
@@ -1025,6 +1034,64 @@ function ManageGrades() {
             </button>
           </div>
         </div>
+
+        {demoProofs.length > 0 && (
+          <div
+            style={{
+              marginBottom: "16px",
+              padding: "14px",
+              borderRadius: "12px",
+              background: "rgba(14, 165, 233, 0.10)",
+              border: "1px solid rgba(56, 189, 248, 0.35)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "10px" }}>
+              <div>
+                <div style={{ color: "#7dd3fc", fontSize: "14px", fontWeight: 800 }}>
+                  Minh chứng mã hóa CRT
+                </div>
+                <div style={{ color: "#cbd5e1", fontSize: "12px", marginTop: "3px" }}>
+                  Điểm rõ được biến thành bản mã C; p chỉ hiển thị để phục vụ demo.
+                </div>
+              </div>
+              <span style={{ color: "#22c55e", fontSize: "12px", fontWeight: 800 }}>
+                {demoProofs.length} mẫu
+              </span>
+            </div>
+
+            <div style={{ display: "grid", gap: "8px" }}>
+              {demoProofs.map((item, index) => (
+                <div
+                  key={`${item.MaSV || item.MASV}-${item.MAHP}-${index}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "110px 150px minmax(0, 1fr)",
+                    gap: "10px",
+                    alignItems: "center",
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    background: "rgba(15, 23, 42, 0.72)",
+                    border: "1px solid rgba(148, 163, 184, 0.18)",
+                    color: "#e2e8f0",
+                    fontSize: "12px",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: "#fff" }}>{item.MaSV}</div>
+                  <div>
+                    <span style={{ color: "#94a3b8" }}>p: </span>
+                    <span style={{ color: "#38bdf8", fontWeight: 800 }}>
+                      {Array.isArray(item.primes) ? item.primes.join(", ") : `${item.startIndex}-${item.endIndex}`}
+                    </span>
+                  </div>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ color: "#94a3b8" }}>C: </span>
+                    <span style={{ color: "#facc15", fontWeight: 800 }}>{item.C}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse" }}>

@@ -18,6 +18,7 @@ function AdminEncryptionKey() {
 
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [demoProof, setDemoProof] = useState(null);
 
   const onChange = (e) => {
     setForm((prev) => ({
@@ -100,6 +101,7 @@ function AdminEncryptionKey() {
   const submit = async (e) => {
     e.preventDefault();
     setMsg("");
+    setDemoProof(null);
 
     if (!form.current || !form.next || !form.confirm) {
       return setMsg("Vui lòng nhập đầy đủ thông tin.");
@@ -142,9 +144,11 @@ function AdminEncryptionKey() {
 
       if (data.async && data.jobId) {
         setMsg(PIN_CHANGE_PROGRESS_MESSAGE);
-        await pollPinChangeJob(data.jobId);
+        const completedJob = await pollPinChangeJob(data.jobId);
+        setDemoProof(completedJob.demoProof || null);
         setMsg(PIN_CHANGE_SUCCESS_MESSAGE);
       } else {
+        setDemoProof(data.demoProof || null);
         setMsg(PIN_CHANGE_SUCCESS_MESSAGE);
       }
 
@@ -250,6 +254,32 @@ function AdminEncryptionKey() {
             </label>
 
             {msg && <div className="admin-ek__msg">{msg}</div>}
+
+            {demoProof && (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: "12px",
+                  background: "#f0f9ff",
+                  border: "1px solid #38bdf8",
+                  color: "#0f172a",
+                  fontSize: "13px",
+                  lineHeight: 1.6,
+                }}
+              >
+                <div style={{ color: "#0369a1", fontWeight: 800, marginBottom: "6px" }}>
+                  Minh chứng đổi PIN CRT
+                </div>
+                <div style={{ fontWeight: 700 }}>Mã: {demoProof.subjectId || demoProof.maHp} - HP: {demoProof.maHp}</div>
+                <div><span style={{ color: "#475569" }}>p cũ:</span> <span style={{ color: "#0f766e", fontWeight: 800 }}>{demoProof.oldRange ? `${demoProof.oldRange.startIndex}-${demoProof.oldRange.endIndex}` : "không có"}</span></div>
+                <div><span style={{ color: "#475569" }}>p mới:</span> <span style={{ color: "#0f766e", fontWeight: 800 }}>{demoProof.newRange ? `${demoProof.newRange.startIndex}-${demoProof.newRange.endIndex}` : "không có"}</span></div>
+                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ color: "#475569" }}>C cũ:</span> <span style={{ color: "#c2410c", fontWeight: 800 }}>{demoProof.oldC}</span></div>
+                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ color: "#475569" }}>C mới:</span> <span style={{ color: "#c2410c", fontWeight: 800 }}>{demoProof.newC}</span></div>
+                <div style={{ color: "#15803d", fontWeight: 800 }}>
+                  Điểm gốc sau giải mã: {Array.isArray(demoProof.plaintext) ? demoProof.plaintext.join(", ") : "không đổi"}
+                </div>
+              </div>
+            )}
 
             <button className="btn btn--primary" type="submit" disabled={loading}>
               {loading ? "Đang đồng bộ dữ liệu CRT..." : "Đổi PIN của tôi"}
