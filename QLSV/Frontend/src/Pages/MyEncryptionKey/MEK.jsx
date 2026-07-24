@@ -105,8 +105,8 @@ function EncryptionKey() {
       return setMsg("Vui lòng nhập đầy đủ thông tin.");
     }
 
-    if (form.next.length < 4) {
-      return setMsg("PIN mới phải có ít nhất 4 chữ số.");
+    if (form.next.length < 6) {
+      return setMsg("PIN mới phải có ít nhất 6 chữ số.");
     }
 
     if (form.next !== form.confirm) {

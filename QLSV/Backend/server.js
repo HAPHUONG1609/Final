@@ -197,6 +197,53 @@ const JAVA_CRYPTO_HTTP_AGENT = new http.Agent({
   timeout: 120000,
 });
 
+/*
+ * Stable crypto key design
+ * ------------------------
+ * The user's PIN is only an unlock credential. A stable numeric DH private key
+ * is encrypted with a key derived from the PIN and stored in USER_CRYPTO_KEY.
+ * Changing the PIN only re-wraps this small key; PUBLIC_KEY and DIEM_CRT.C do
+ * not change, so historical grades are never scanned or re-encrypted.
+ *
+ * Existing PIN-derived identities remain readable, then are migrated once to
+ * a random 256-bit private key. Only that one-time migration re-encrypts C.
+ */
+const STABLE_CRYPTO_KEY_ALGORITHM = "AES-256-GCM";
+const STABLE_CRYPTO_KEY_KDF = "SCRYPT_V2";
+const LEGACY_CRYPTO_KEY_KDF = "SCRYPT_V1";
+const STRONG_CRYPTO_KEY_ORIGIN = "RANDOM_256";
+const LEGACY_CRYPTO_KEY_ORIGIN = "LEGACY_PIN";
+const STABLE_CRYPTO_KEY_PEPPER =
+  process.env.CRYPTO_KEY_PEPPER ||
+  process.env.SESSION_SECRET ||
+  "qlsv-crt-stable-key-pepper-change-me";
+if (
+  process.env.NODE_ENV === "production" &&
+  (!process.env.CRYPTO_KEY_PEPPER ||
+    process.env.CRYPTO_KEY_PEPPER.includes("change-this"))
+) {
+  throw new Error(
+    "CRYPTO_KEY_PEPPER bắt buộc phải là bí mật riêng trong môi trường production"
+  );
+}
+const STABLE_CRYPTO_KEY_SCRYPT_OPTIONS = {
+  N: 32768,
+  r: 8,
+  p: 3,
+  maxmem: 128 * 1024 * 1024,
+};
+const LEGACY_CRYPTO_KEY_SCRYPT_OPTIONS = {
+  N: 16384,
+  r: 8,
+  p: 1,
+  maxmem: 64 * 1024 * 1024,
+};
+const PIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const PIN_ATTEMPT_MAX_FAILURES = 5;
+const PIN_ATTEMPTS = new Map();
+
+let userCryptoKeyTablePromise = null;
+
 function queryAsync(query, params = []) {
   return new Promise((resolve, reject) => {
     sql.query(connectionString, query, params, (err, rows) => {
@@ -204,6 +251,392 @@ function queryAsync(query, params = []) {
       resolve(rows || []);
     });
   });
+}
+
+function ensureUserCryptoKeyTable() {
+  if (!userCryptoKeyTablePromise) {
+    userCryptoKeyTablePromise = queryAsync(`
+      IF OBJECT_ID('dbo.USER_CRYPTO_KEY', 'U') IS NULL
+      BEGIN
+        CREATE TABLE dbo.USER_CRYPTO_KEY (
+          PRINCIPAL_TYPE VARCHAR(20) NOT NULL,
+          PRINCIPAL_ID VARCHAR(50) NOT NULL,
+          KEY_CIPHERTEXT NVARCHAR(MAX) NOT NULL,
+          KEY_SALT VARCHAR(128) NOT NULL,
+          KEY_IV VARCHAR(64) NOT NULL,
+          KEY_AUTH_TAG VARCHAR(64) NOT NULL,
+          KDF_VERSION VARCHAR(30) NOT NULL,
+          ALGORITHM_VERSION VARCHAR(30) NOT NULL,
+          KEY_ORIGIN VARCHAR(30) NOT NULL
+            CONSTRAINT DF_USER_CRYPTO_KEY_ORIGIN DEFAULT ('LEGACY_PIN'),
+          KEY_VERSION INT NOT NULL CONSTRAINT DF_USER_CRYPTO_KEY_VERSION DEFAULT (1),
+          CREATED_AT DATETIME2(0) NOT NULL CONSTRAINT DF_USER_CRYPTO_KEY_CREATED_AT
+            DEFAULT (DATEADD(HOUR, 7, SYSUTCDATETIME())),
+          UPDATED_AT DATETIME2(0) NOT NULL CONSTRAINT DF_USER_CRYPTO_KEY_UPDATED_AT
+            DEFAULT (DATEADD(HOUR, 7, SYSUTCDATETIME())),
+          CONSTRAINT PK_USER_CRYPTO_KEY PRIMARY KEY (PRINCIPAL_TYPE, PRINCIPAL_ID)
+        );
+      END;
+      IF COL_LENGTH('dbo.USER_CRYPTO_KEY', 'KEY_ORIGIN') IS NULL
+      BEGIN
+        ALTER TABLE dbo.USER_CRYPTO_KEY
+          ADD KEY_ORIGIN VARCHAR(30) NOT NULL
+            CONSTRAINT DF_USER_CRYPTO_KEY_ORIGIN DEFAULT ('LEGACY_PIN');
+      END;
+    `).catch((error) => {
+      userCryptoKeyTablePromise = null;
+      throw error;
+    });
+  }
+
+  return userCryptoKeyTablePromise;
+}
+
+function normalizeCryptoPrincipalType(value) {
+  const type = String(value || "").trim().toUpperCase();
+  if (type === "GIANGVIEN" || type === "SINHVIEN") return type;
+  throw new Error("Loại chủ thể khóa không hợp lệ");
+}
+
+function normalizeCryptoPrincipalId(value) {
+  const id = String(value || "").trim().toUpperCase();
+  if (!id) throw new Error("Thiếu mã chủ thể khóa");
+  return id;
+}
+
+function getScryptOptions(kdfVersion) {
+  return String(kdfVersion || "").trim() === LEGACY_CRYPTO_KEY_KDF
+    ? LEGACY_CRYPTO_KEY_SCRYPT_OPTIONS
+    : STABLE_CRYPTO_KEY_SCRYPT_OPTIONS;
+}
+
+function derivePinWrappingKey(pin, salt, kdfVersion = STABLE_CRYPTO_KEY_KDF) {
+  const credential = `${String(pin || "")}\u0000${STABLE_CRYPTO_KEY_PEPPER}`;
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(
+      credential,
+      salt,
+      32,
+      getScryptOptions(kdfVersion),
+      (error, derivedKey) => (error ? reject(error) : resolve(derivedKey))
+    );
+  });
+}
+
+function generateStrongCryptoPrivateKey() {
+  const bytes = crypto.randomBytes(32);
+  bytes[0] |= 0x80;
+  return BigInt(`0x${bytes.toString("hex")}`).toString(10);
+}
+
+async function hashPinForStorage(pin) {
+  const salt = crypto.randomBytes(16);
+  const derived = await new Promise((resolve, reject) => {
+    crypto.scrypt(
+      `${String(pin || "")}\u0000${STABLE_CRYPTO_KEY_PEPPER}`,
+      salt,
+      32,
+      STABLE_CRYPTO_KEY_SCRYPT_OPTIONS,
+      (error, value) => (error ? reject(error) : resolve(value))
+    );
+  });
+
+  return [
+    "SCRYPT_PIN_V1",
+    STABLE_CRYPTO_KEY_SCRYPT_OPTIONS.N,
+    STABLE_CRYPTO_KEY_SCRYPT_OPTIONS.r,
+    STABLE_CRYPTO_KEY_SCRYPT_OPTIONS.p,
+    salt.toString("base64"),
+    derived.toString("base64"),
+  ].join("$");
+}
+
+async function verifyStoredPin(pin, storedHash) {
+  const normalizedHash = String(storedHash || "").trim();
+  if (!normalizedHash) return false;
+
+  if (normalizedHash.startsWith("SCRYPT_PIN_V1$")) {
+    try {
+      const [, nRaw, rRaw, pRaw, saltBase64, hashBase64] = normalizedHash.split("$");
+      const options = {
+        N: Number(nRaw),
+        r: Number(rRaw),
+        p: Number(pRaw),
+        maxmem: 128 * 1024 * 1024,
+      };
+      if (
+        !Number.isInteger(options.N) ||
+        !Number.isInteger(options.r) ||
+        !Number.isInteger(options.p) ||
+        options.N < 16384 ||
+        options.N > 65536 ||
+        options.r < 1 ||
+        options.r > 8 ||
+        options.p < 1 ||
+        options.p > 5
+      ) {
+        return false;
+      }
+
+      const expected = Buffer.from(hashBase64, "base64");
+      const actual = await new Promise((resolve, reject) => {
+        crypto.scrypt(
+          `${String(pin || "")}\u0000${STABLE_CRYPTO_KEY_PEPPER}`,
+          Buffer.from(saltBase64, "base64"),
+          expected.length,
+          options,
+          (error, value) => (error ? reject(error) : resolve(value))
+        );
+      });
+      return expected.length > 0 &&
+        actual.length === expected.length &&
+        crypto.timingSafeEqual(actual, expected);
+    } catch {
+      return false;
+    }
+  }
+
+  // Tương thích dữ liệu cũ; hash sẽ được nâng cấp ở lần đổi PIN thành công.
+  if (/^[0-9A-Fa-f]{64}$/.test(normalizedHash)) {
+    const legacyHash = crypto
+      .createHash("sha256")
+      .update(String(pin || ""), "utf8")
+      .digest();
+    const expected = Buffer.from(normalizedHash, "hex");
+    return crypto.timingSafeEqual(legacyHash, expected);
+  }
+
+  return false;
+}
+
+function buildPinAttemptKey(req, operation, principalId) {
+  return [
+    String(operation || "PIN").trim().toUpperCase(),
+    normalizeCryptoPrincipalId(principalId),
+    String(req.ip || req.socket?.remoteAddress || "unknown"),
+  ].join("|");
+}
+
+function getPinAttemptBlock(key) {
+  const now = Date.now();
+  const state = PIN_ATTEMPTS.get(key);
+  if (!state) return null;
+  if (now - state.firstFailureAt >= PIN_ATTEMPT_WINDOW_MS) {
+    PIN_ATTEMPTS.delete(key);
+    return null;
+  }
+  if (state.failures < PIN_ATTEMPT_MAX_FAILURES) return null;
+  return {
+    retryAfterSeconds: Math.max(
+      1,
+      Math.ceil((PIN_ATTEMPT_WINDOW_MS - (now - state.firstFailureAt)) / 1000)
+    ),
+  };
+}
+
+function recordPinFailure(key) {
+  const now = Date.now();
+  const current = PIN_ATTEMPTS.get(key);
+  if (!current || now - current.firstFailureAt >= PIN_ATTEMPT_WINDOW_MS) {
+    PIN_ATTEMPTS.set(key, { failures: 1, firstFailureAt: now });
+    return;
+  }
+  current.failures += 1;
+}
+
+function clearPinFailures(key) {
+  if (key) PIN_ATTEMPTS.delete(key);
+}
+
+function rejectIfPinRateLimited(res, key) {
+  const block = getPinAttemptBlock(key);
+  if (!block) return false;
+  res.set("Retry-After", String(block.retryAfterSeconds));
+  res.status(429).json({
+    message: "Đã nhập sai PIN quá nhiều lần. Vui lòng thử lại sau.",
+    retryAfterSeconds: block.retryAfterSeconds,
+  });
+  return true;
+}
+
+function stableCryptoKeyAad(principalType, principalId) {
+  return Buffer.from(
+    `QLSV_AT|${normalizeCryptoPrincipalType(principalType)}|${normalizeCryptoPrincipalId(principalId)}|CRT_DH_STABLE_V1`,
+    "utf8"
+  );
+}
+
+async function wrapStableCryptoPrivateKey({
+  principalType,
+  principalId,
+  privateKey,
+  pin,
+  keyVersion = 1,
+  keyOrigin = STRONG_CRYPTO_KEY_ORIGIN,
+}) {
+  const normalizedPrivateKey = String(privateKey || "").trim();
+  if (!/^\d+$/.test(normalizedPrivateKey)) {
+    throw new Error("Khóa DH riêng phải là số nguyên dương");
+  }
+
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const wrappingKey = await derivePinWrappingKey(pin, salt, STABLE_CRYPTO_KEY_KDF);
+  const cipher = crypto.createCipheriv("aes-256-gcm", wrappingKey, iv);
+  cipher.setAAD(stableCryptoKeyAad(principalType, principalId));
+
+  const ciphertext = Buffer.concat([
+    cipher.update(normalizedPrivateKey, "utf8"),
+    cipher.final(),
+  ]);
+
+  return {
+    ciphertext: ciphertext.toString("base64"),
+    salt: salt.toString("base64"),
+    iv: iv.toString("base64"),
+    authTag: cipher.getAuthTag().toString("base64"),
+    kdfVersion: STABLE_CRYPTO_KEY_KDF,
+    algorithmVersion: STABLE_CRYPTO_KEY_ALGORITHM,
+    keyVersion: Math.max(1, Number(keyVersion) || 1),
+    keyOrigin: String(keyOrigin || STRONG_CRYPTO_KEY_ORIGIN).trim(),
+  };
+}
+
+async function unwrapStableCryptoPrivateKey({
+  principalType,
+  principalId,
+  pin,
+  record,
+}) {
+  const kdfVersion = String(record?.KDF_VERSION || "").trim();
+  if (
+    ![STABLE_CRYPTO_KEY_KDF, LEGACY_CRYPTO_KEY_KDF].includes(kdfVersion) ||
+    String(record?.ALGORITHM_VERSION || "").trim() !== STABLE_CRYPTO_KEY_ALGORITHM
+  ) {
+    throw new Error("Phiên bản gói khóa cá nhân không được hỗ trợ");
+  }
+
+  try {
+    const salt = Buffer.from(String(record.KEY_SALT || ""), "base64");
+    const iv = Buffer.from(String(record.KEY_IV || ""), "base64");
+    const authTag = Buffer.from(String(record.KEY_AUTH_TAG || ""), "base64");
+    const ciphertext = Buffer.from(String(record.KEY_CIPHERTEXT || ""), "base64");
+    const wrappingKey = await derivePinWrappingKey(pin, salt, kdfVersion);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", wrappingKey, iv);
+    decipher.setAAD(stableCryptoKeyAad(principalType, principalId));
+    decipher.setAuthTag(authTag);
+
+    const privateKey = Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]).toString("utf8").trim();
+
+    if (!/^\d+$/.test(privateKey)) {
+      throw new Error("Khóa DH riêng sau khi mở không hợp lệ");
+    }
+
+    return privateKey;
+  } catch (error) {
+    const wrappedError = new Error("Không thể mở khóa CRT bằng PIN hiện tại");
+    wrappedError.statusCode = 401;
+    wrappedError.cause = error;
+    throw wrappedError;
+  }
+}
+
+async function loadStableCryptoKeyRecord({
+  principalType,
+  principalId,
+  conn = null,
+  lock = false,
+}) {
+  const runner = conn
+    ? (query, params) => connectionQueryAsync(conn, query, params)
+    : queryAsync;
+  const lockHint = lock ? "WITH (UPDLOCK, HOLDLOCK)" : "";
+  const rows = await runner(
+    `
+      SELECT
+        KEY_CIPHERTEXT,
+        KEY_SALT,
+        KEY_IV,
+        KEY_AUTH_TAG,
+        KDF_VERSION,
+        ALGORITHM_VERSION,
+        KEY_ORIGIN,
+        KEY_VERSION
+      FROM dbo.USER_CRYPTO_KEY ${lockHint}
+      WHERE PRINCIPAL_TYPE = ?
+        AND PRINCIPAL_ID = ?
+    `,
+    [
+      normalizeCryptoPrincipalType(principalType),
+      normalizeCryptoPrincipalId(principalId),
+    ]
+  );
+  return rows[0] || null;
+}
+
+async function saveStableCryptoKeyEnvelope({
+  principalType,
+  principalId,
+  envelope,
+  conn = null,
+}) {
+  const runner = conn
+    ? (query, params) => connectionQueryAsync(conn, query, params)
+    : queryAsync;
+
+  await runner(
+    `
+      MERGE dbo.USER_CRYPTO_KEY WITH (HOLDLOCK) AS target
+      USING (
+        SELECT ? AS PRINCIPAL_TYPE, ? AS PRINCIPAL_ID
+      ) AS source
+      ON target.PRINCIPAL_TYPE = source.PRINCIPAL_TYPE
+        AND target.PRINCIPAL_ID = source.PRINCIPAL_ID
+      WHEN MATCHED THEN
+        UPDATE SET
+          KEY_CIPHERTEXT = ?,
+          KEY_SALT = ?,
+          KEY_IV = ?,
+          KEY_AUTH_TAG = ?,
+          KDF_VERSION = ?,
+          ALGORITHM_VERSION = ?,
+          KEY_ORIGIN = ?,
+          KEY_VERSION = ?,
+          UPDATED_AT = DATEADD(HOUR, 7, SYSUTCDATETIME())
+      WHEN NOT MATCHED THEN
+        INSERT (
+          PRINCIPAL_TYPE, PRINCIPAL_ID, KEY_CIPHERTEXT, KEY_SALT,
+          KEY_IV, KEY_AUTH_TAG, KDF_VERSION, ALGORITHM_VERSION,
+          KEY_ORIGIN, KEY_VERSION
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    `,
+    [
+      normalizeCryptoPrincipalType(principalType),
+      normalizeCryptoPrincipalId(principalId),
+      envelope.ciphertext,
+      envelope.salt,
+      envelope.iv,
+      envelope.authTag,
+      envelope.kdfVersion,
+      envelope.algorithmVersion,
+      envelope.keyOrigin,
+      envelope.keyVersion,
+      normalizeCryptoPrincipalType(principalType),
+      normalizeCryptoPrincipalId(principalId),
+      envelope.ciphertext,
+      envelope.salt,
+      envelope.iv,
+      envelope.authTag,
+      envelope.kdfVersion,
+      envelope.algorithmVersion,
+      envelope.keyOrigin,
+      envelope.keyVersion,
+    ]
+  );
 }
 
 let adminAuditTablePromise = null;
@@ -430,7 +863,11 @@ function createPrimeRangeCache() {
   };
 }
 
-async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, newPin }) {
+async function prepareReEncryptTeacherGradesAfterPinChange({
+  maGv,
+  currentPrivateKey,
+  targetPrivateKey,
+}) {
   const gradeRows = await queryAsync(
     `
       SELECT
@@ -522,7 +959,7 @@ async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, n
           mssv,
           maHp,
           publicKey,
-          pin: currentPin,
+          pin: currentPrivateKey,
         });
         decrypted = await tryDecryptGradeWithRanges({
           mssv,
@@ -546,7 +983,7 @@ async function prepareReEncryptTeacherGradesAfterPinChange({ maGv, currentPin, n
       mssv,
       maHp,
       publicKey: newSvPublicKey,
-      pin: newPin,
+      pin: targetPrivateKey,
     });
     const newPrimes = await getCachedPrimesByRange(newRange.startIndex, newRange.endIndex);
     const newC = await encryptGradeCrt({
@@ -587,9 +1024,19 @@ async function applyTeacherPinChangeTransaction({
   username,
   currentPin,
   newPin,
+  targetPrivateKey,
   newTeacherPublicKey,
   prepared,
 }) {
+  const newPinHash = await hashPinForStorage(newPin);
+  const envelope = await wrapStableCryptoPrivateKey({
+    principalType: "GIANGVIEN",
+    principalId: maGv,
+    privateKey: targetPrivateKey,
+    pin: newPin,
+    keyVersion: 1,
+    keyOrigin: STRONG_CRYPTO_KEY_ORIGIN,
+  });
   let conn = null;
   let transactionStarted = false;
 
@@ -601,15 +1048,17 @@ async function applyTeacherPinChangeTransaction({
     const verifyRows = await connectionQueryAsync(
       conn,
       `
-        SELECT CASE WHEN PIN_HASH = CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)), 2)
-                    THEN 1 ELSE 0 END AS IsValid
+        SELECT PIN_HASH
         FROM dbo.GIANG_VIEN WITH (UPDLOCK, HOLDLOCK)
         WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
       `,
-      [currentPin, maGv]
+      [maGv]
     );
 
-    if (Number(verifyRows[0]?.IsValid || 0) !== 1) {
+    if (
+      !verifyRows.length ||
+      !(await verifyStoredPin(currentPin, verifyRows[0].PIN_HASH))
+    ) {
       const error = new Error("PIN hiện tại không đúng hoặc vừa được thay đổi ở phiên khác");
       error.statusCode = 401;
       throw error;
@@ -719,17 +1168,24 @@ async function applyTeacherPinChangeTransaction({
       }
     }
 
+    await saveStableCryptoKeyEnvelope({
+      principalType: "GIANGVIEN",
+      principalId: maGv,
+      envelope,
+      conn,
+    });
+
     await connectionQueryAsync(
       conn,
       `
         UPDATE dbo.GIANG_VIEN
-        SET PIN_HASH = CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)), 2),
+        SET PIN_HASH = ?,
             PUBLIC_KEY = ?,
             KEY_VERSION = ISNULL(KEY_VERSION, 1) + 1,
             PIN_CHANGED_AT = GETDATE()
         WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
       `,
-      [newPin, newTeacherPublicKey, maGv]
+      [newPinHash, newTeacherPublicKey, maGv]
     );
 
     await connectionQueryAsync(
@@ -826,16 +1282,37 @@ function startTeacherPinChangeJob({ maGv, username, currentPin, newPin }) {
       job.status = "running";
       job.step = "prepare";
       job.updatedAt = new Date().toISOString();
-      job.message = "Đang giải mã điểm cũ và mã hóa lại theo PIN mới.";
+      job.message = "Đang chuyển dữ liệu sang khóa CRT ngẫu nhiên 256-bit.";
 
-      const [newTeacherPublicKey, prepared] = await Promise.all([
-        calculatePublicKeyFromPin(newPin),
-        prepareReEncryptTeacherGradesAfterPinChange({
-          maGv: normalizedMaGv,
-          currentPin,
-          newPin,
-        }),
-      ]);
+      const identityRows = await queryAsync(
+        `
+          SELECT PUBLIC_KEY, PIN_HASH
+          FROM dbo.GIANG_VIEN
+          WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
+        `,
+        [normalizedMaGv]
+      );
+      if (
+        !identityRows.length ||
+        !(await verifyStoredPin(currentPin, identityRows[0].PIN_HASH))
+      ) {
+        throw new Error("PIN hiện tại không đúng");
+      }
+
+      const currentKey = await getOrBootstrapStableCryptoPrivateKey({
+        principalType: "GIANGVIEN",
+        principalId: normalizedMaGv,
+        pin: currentPin,
+        storedPublicKey: identityRows[0].PUBLIC_KEY,
+        allowLegacyPublicKeyMismatch: true,
+      });
+      const targetPrivateKey = generateStrongCryptoPrivateKey();
+      const newTeacherPublicKey = await calculatePublicKeyFromPin(targetPrivateKey);
+      const prepared = await prepareReEncryptTeacherGradesAfterPinChange({
+        maGv: normalizedMaGv,
+        currentPrivateKey: currentKey.privateKey,
+        targetPrivateKey,
+      });
 
       job.reEncryptedGrades = prepared.updates.length;
       job.repairedStudentPublicKeys = prepared.studentPublicKeyRepairs.size;
@@ -861,13 +1338,15 @@ function startTeacherPinChangeJob({ maGv, username, currentPin, newPin }) {
         username,
         currentPin,
         newPin,
+        targetPrivateKey,
         newTeacherPublicKey,
         prepared,
       });
 
       job.status = "completed";
       job.step = "done";
-      job.message = "Đổi PIN giảng viên thành công. Các điểm cũ đã được mã hóa lại.";
+      job.message =
+        "Chuyển đổi khóa thành công. Các lần đổi PIN sau sẽ không quét điểm cũ.";
       job.finishedAt = new Date().toISOString();
       job.updatedAt = job.finishedAt;
     } catch (error) {
@@ -974,16 +1453,39 @@ function startStudentPinChangeJob({ mssv, username, currentPin, newPin }) {
       job.status = "running";
       job.step = "prepare";
       job.updatedAt = new Date().toISOString();
-      job.message = "Đang giải mã điểm cũ và mã hóa lại theo PIN mới.";
+      job.message = "Đang chuyển dữ liệu sang khóa CRT ngẫu nhiên 256-bit.";
 
-      const [newPublicKey, gradeUpdates] = await Promise.all([
-        calculatePublicKeyFromPin(newPin),
-        prepareReEncryptStudentGradesAfterPinChange({
-          mssv: normalizedMssv,
-          currentPin,
-          newPin,
-        }),
-      ]);
+      const identityRows = await queryAsync(
+        `
+          SELECT sv.PUBLIC_KEY, p.PIN_HASH
+          FROM dbo.SINH_VIEN sv
+          INNER JOIN dbo.PING p
+            ON UPPER(LTRIM(RTRIM(p.MASV))) = UPPER(LTRIM(RTRIM(sv.MaSV)))
+          WHERE UPPER(LTRIM(RTRIM(sv.MaSV))) = UPPER(?)
+        `,
+        [normalizedMssv]
+      );
+      if (
+        !identityRows.length ||
+        !(await verifyStoredPin(currentPin, identityRows[0].PIN_HASH))
+      ) {
+        throw new Error("PIN hiện tại không đúng");
+      }
+
+      const currentKey = await getOrBootstrapStableCryptoPrivateKey({
+        principalType: "SINHVIEN",
+        principalId: normalizedMssv,
+        pin: currentPin,
+        storedPublicKey: identityRows[0].PUBLIC_KEY,
+        allowLegacyPublicKeyMismatch: true,
+      });
+      const targetPrivateKey = generateStrongCryptoPrivateKey();
+      const newPublicKey = await calculatePublicKeyFromPin(targetPrivateKey);
+      const gradeUpdates = await prepareReEncryptStudentGradesAfterPinChange({
+        mssv: normalizedMssv,
+        currentPrivateKey: currentKey.privateKey,
+        targetPrivateKey,
+      });
 
       job.reEncryptedGrades = gradeUpdates.length;
       const demoUpdate = pickDemoProofUpdate(gradeUpdates, normalizedMssv);
@@ -1008,13 +1510,15 @@ function startStudentPinChangeJob({ mssv, username, currentPin, newPin }) {
         username,
         currentPin,
         newPin,
+        targetPrivateKey,
         newPublicKey,
         gradeUpdates,
       });
 
       job.status = "completed";
       job.step = "done";
-      job.message = "Đổi PIN sinh viên thành công. Các điểm cũ đã được mã hóa lại và PIN mới đã có hiệu lực.";
+      job.message =
+        "Chuyển đổi khóa thành công. Các lần đổi PIN sau sẽ không quét điểm cũ.";
       job.finishedAt = new Date().toISOString();
       job.updatedAt = job.finishedAt;
     } catch (error) {
@@ -1069,6 +1573,327 @@ async function calculatePublicKeyFromPin(pin) {
   }
 
   return publicKey;
+}
+
+async function getOrBootstrapStableCryptoPrivateKey({
+  principalType,
+  principalId,
+  pin,
+  storedPublicKey,
+  conn = null,
+  lock = false,
+  allowLegacyPublicKeyMismatch = false,
+}) {
+  await ensureUserCryptoKeyTable();
+
+  const normalizedType = normalizeCryptoPrincipalType(principalType);
+  const normalizedId = normalizeCryptoPrincipalId(principalId);
+  let record = await loadStableCryptoKeyRecord({
+    principalType: normalizedType,
+    principalId: normalizedId,
+    conn,
+    lock,
+  });
+
+  let privateKey;
+  const isLegacyIdentity = !record ||
+    String(record.KEY_ORIGIN || LEGACY_CRYPTO_KEY_ORIGIN).trim() !== STRONG_CRYPTO_KEY_ORIGIN;
+
+  if (record) {
+    privateKey = await unwrapStableCryptoPrivateKey({
+      principalType: normalizedType,
+      principalId: normalizedId,
+      pin,
+      record,
+    });
+  } else {
+    /*
+     * Backward-compatible read path. Historical rows used PIN directly as the
+     * DH private exponent. We can still decrypt them, but deliberately do not
+     * persist that low-entropy value as a strong key. The next PIN change will
+     * perform the one-time migration to a random 256-bit private key.
+     */
+    privateKey = String(pin || "").trim();
+    if (!/^\d+$/.test(privateKey)) {
+      const error = new Error("PIN hiện tại không thể khởi tạo khóa CRT ổn định");
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  const expectedPublicKey = String(storedPublicKey || "").trim();
+  /*
+   * Với phong bì khóa đã tồn tại, AES-GCM + AAD đã bảo đảm tính toàn vẹn và
+   * đúng chủ thể. Không gọi Java để tính lại public key ở mỗi lần xem/nhập
+   * điểm; việc đó chỉ cần trong lần migration đầu tiên.
+   */
+  const publicKey =
+    record && expectedPublicKey
+      ? expectedPublicKey
+      : await calculatePublicKeyFromPin(privateKey);
+
+  if (
+    expectedPublicKey &&
+    expectedPublicKey !== publicKey &&
+    !allowLegacyPublicKeyMismatch
+  ) {
+    const error = new Error(
+      "PUBLIC_KEY hiện tại không khớp khóa CRT ổn định; cần chạy flow chuyển đổi legacy một lần"
+    );
+    error.statusCode = 409;
+    error.requiresLegacyReEncryption = true;
+    throw error;
+  }
+
+  return {
+    privateKey,
+    publicKey,
+    keyVersion: Math.max(1, Number(record?.KEY_VERSION) || 1),
+    keyOrigin: String(record?.KEY_ORIGIN || LEGACY_CRYPTO_KEY_ORIGIN).trim(),
+    requiresStrongKeyMigration: isLegacyIdentity,
+  };
+}
+
+async function changePinByRewrappingStableKey({
+  principalType,
+  principalId,
+  username,
+  currentPin,
+  newPin,
+}) {
+  await ensureUserCryptoKeyTable();
+
+  const normalizedType = normalizeCryptoPrincipalType(principalType);
+  const normalizedId = normalizeCryptoPrincipalId(principalId);
+  let conn = null;
+  let transactionStarted = false;
+
+  try {
+    conn = await openConnectionAsync();
+    await beginTransactionAsync(conn);
+    transactionStarted = true;
+
+    let identityRows;
+    if (normalizedType === "GIANGVIEN") {
+      identityRows = await connectionQueryAsync(
+        conn,
+        `
+          SELECT
+            PUBLIC_KEY,
+            PIN_HASH
+          FROM dbo.GIANG_VIEN WITH (UPDLOCK, HOLDLOCK)
+          WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
+        `,
+        [normalizedId]
+      );
+    } else {
+      identityRows = await connectionQueryAsync(
+        conn,
+        `
+          SELECT
+            sv.PUBLIC_KEY,
+            p.PIN_HASH
+          FROM dbo.SINH_VIEN sv WITH (UPDLOCK, HOLDLOCK)
+          INNER JOIN dbo.PING p WITH (UPDLOCK, HOLDLOCK)
+            ON UPPER(LTRIM(RTRIM(p.MASV))) = UPPER(LTRIM(RTRIM(sv.MaSV)))
+          WHERE UPPER(LTRIM(RTRIM(sv.MaSV))) = UPPER(?)
+        `,
+        [normalizedId]
+      );
+    }
+
+    if (
+      !identityRows.length ||
+      !(await verifyStoredPin(currentPin, identityRows[0].PIN_HASH))
+    ) {
+      const error = new Error("PIN hiện tại không đúng hoặc vừa được thay đổi ở phiên khác");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const stableKey = await getOrBootstrapStableCryptoPrivateKey({
+      principalType: normalizedType,
+      principalId: normalizedId,
+      pin: currentPin,
+      storedPublicKey: identityRows[0].PUBLIC_KEY,
+      conn,
+      lock: true,
+    });
+
+    if (stableKey.requiresStrongKeyMigration) {
+      const error = new Error(
+        "Tài khoản cần chuyển đổi một lần sang khóa CRT ngẫu nhiên 256-bit"
+      );
+      error.statusCode = 409;
+      error.requiresLegacyReEncryption = true;
+      throw error;
+    }
+
+    const nextEnvelope = await wrapStableCryptoPrivateKey({
+      principalType: normalizedType,
+      principalId: normalizedId,
+      privateKey: stableKey.privateKey,
+      pin: newPin,
+      // The underlying DH key is unchanged, so its version is unchanged.
+      keyVersion: stableKey.keyVersion,
+      keyOrigin: STRONG_CRYPTO_KEY_ORIGIN,
+    });
+    const newPinHash = await hashPinForStorage(newPin);
+
+    await saveStableCryptoKeyEnvelope({
+      principalType: normalizedType,
+      principalId: normalizedId,
+      envelope: nextEnvelope,
+      conn,
+    });
+
+    if (normalizedType === "GIANGVIEN") {
+      await connectionQueryAsync(
+        conn,
+        `
+          UPDATE dbo.GIANG_VIEN
+          SET PIN_HASH = ?,
+              PIN_CHANGED_AT = GETDATE()
+          WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
+        `,
+        [newPinHash, normalizedId]
+      );
+
+      await connectionQueryAsync(
+        conn,
+        `
+          INSERT INTO dbo.LICH_SU_DOI_PIN (
+            USERNAME, MASV, MAGV, THOI_GIAN, HANH_DONG
+          )
+          VALUES (
+            ?, NULL, ?, DATEADD(HOUR, 7, SYSUTCDATETIME()),
+            N'Giảng viên tự đổi PIN và mã hóa lại điểm CRT'
+          )
+        `,
+        [username, normalizedId]
+      );
+    } else {
+      await connectionQueryAsync(
+        conn,
+        `
+          UPDATE dbo.PING
+          SET PIN_HASH = ?
+          WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
+        `,
+        [newPinHash, normalizedId]
+      );
+
+      await connectionQueryAsync(
+        conn,
+        `
+          INSERT INTO dbo.LICH_SU_DOI_PIN (
+            USERNAME, MASV, MAGV, THOI_GIAN, HANH_DONG
+          )
+          VALUES (
+            ?, ?, NULL, DATEADD(HOUR, 7, SYSUTCDATETIME()),
+            N'Sinh viên tự đổi PIN và mã hóa lại điểm CRT'
+          )
+        `,
+        [username, normalizedId]
+      );
+    }
+
+    await commitTransactionAsync(conn);
+    transactionStarted = false;
+
+    return {
+      success: true,
+      async: false,
+      optimized: true,
+      reEncryptedGrades: 0,
+      keyVersion: stableKey.keyVersion,
+      publicKeyChanged: false,
+      ciphertextChanged: false,
+      keyOrigin: STRONG_CRYPTO_KEY_ORIGIN,
+      message:
+        "Đổi PIN thành công. Hệ thống chỉ bọc lại khóa CRT, không quét hoặc mã hóa lại điểm cũ.",
+    };
+  } catch (error) {
+    if (conn && transactionStarted) await rollbackTransactionAsync(conn);
+    throw error;
+  } finally {
+    await closeConnectionAsync(conn);
+  }
+}
+
+async function provisionStrongCryptoIdentity({
+  principalType,
+  principalId,
+  initialPin,
+}) {
+  await ensureUserCryptoKeyTable();
+  const normalizedType = normalizeCryptoPrincipalType(principalType);
+  const normalizedId = normalizeCryptoPrincipalId(principalId);
+  const privateKey = generateStrongCryptoPrivateKey();
+  const publicKey = await calculatePublicKeyFromPin(privateKey);
+  const pinHash = await hashPinForStorage(initialPin);
+  const envelope = await wrapStableCryptoPrivateKey({
+    principalType: normalizedType,
+    principalId: normalizedId,
+    privateKey,
+    pin: initialPin,
+    keyVersion: 1,
+    keyOrigin: STRONG_CRYPTO_KEY_ORIGIN,
+  });
+
+  let conn = null;
+  let transactionStarted = false;
+  try {
+    conn = await openConnectionAsync();
+    await beginTransactionAsync(conn);
+    transactionStarted = true;
+
+    if (normalizedType === "GIANGVIEN") {
+      await connectionQueryAsync(
+        conn,
+        `
+          UPDATE dbo.GIANG_VIEN
+          SET PUBLIC_KEY = ?, PIN_HASH = ?
+          WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
+        `,
+        [publicKey, pinHash, normalizedId]
+      );
+    } else {
+      await connectionQueryAsync(
+        conn,
+        `
+          UPDATE dbo.SINH_VIEN
+          SET PUBLIC_KEY = ?
+          WHERE UPPER(LTRIM(RTRIM(MaSV))) = UPPER(?)
+        `,
+        [publicKey, normalizedId]
+      );
+      await connectionQueryAsync(
+        conn,
+        `
+          UPDATE dbo.PING
+          SET PIN_HASH = ?
+          WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
+        `,
+        [pinHash, normalizedId]
+      );
+    }
+
+    await saveStableCryptoKeyEnvelope({
+      principalType: normalizedType,
+      principalId: normalizedId,
+      envelope,
+      conn,
+    });
+    await commitTransactionAsync(conn);
+    transactionStarted = false;
+    return { publicKey, keyOrigin: STRONG_CRYPTO_KEY_ORIGIN };
+  } catch (error) {
+    if (conn && transactionStarted) await rollbackTransactionAsync(conn);
+    throw error;
+  } finally {
+    await closeConnectionAsync(conn);
+  }
 }
 
 async function calculatePrimeRange({ maKhoa, maLop, mssv, maHp, publicKey, pin }) {
@@ -1155,7 +1980,11 @@ async function encryptGradeCrt({ mssv, plaintext, primes }) {
   return C;
 }
 
-async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, newPin }) {
+async function prepareReEncryptStudentGradesAfterPinChange({
+  mssv,
+  currentPrivateKey,
+  targetPrivateKey,
+}) {
   const svRows = await queryAsync(
     `
       SELECT
@@ -1224,7 +2053,7 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
       mssv,
       maHp,
       publicKey: gvPublicKey,
-      pin: currentPin,
+      pin: currentPrivateKey,
     });
     const decryptedOld = await tryDecryptGradeWithRanges({
       mssv,
@@ -1244,7 +2073,7 @@ async function prepareReEncryptStudentGradesAfterPinChange({ mssv, currentPin, n
       mssv,
       maHp,
       publicKey: gvPublicKey,
-      pin: newPin,
+      pin: targetPrivateKey,
     });
     const newPrimes = await getCachedPrimesByRange(newRange.startIndex, newRange.endIndex);
     const newC = await encryptGradeCrt({ mssv, plaintext, primes: newPrimes });
@@ -1276,9 +2105,19 @@ async function applyStudentPinChangeTransaction({
   username,
   currentPin,
   newPin,
+  targetPrivateKey,
   newPublicKey,
   gradeUpdates,
 }) {
+  const newPinHash = await hashPinForStorage(newPin);
+  const envelope = await wrapStableCryptoPrivateKey({
+    principalType: "SINHVIEN",
+    principalId: mssv,
+    privateKey: targetPrivateKey,
+    pin: newPin,
+    keyVersion: 1,
+    keyOrigin: STRONG_CRYPTO_KEY_ORIGIN,
+  });
   let conn = null;
   let transactionStarted = false;
 
@@ -1290,15 +2129,17 @@ async function applyStudentPinChangeTransaction({
     const verifyRows = await connectionQueryAsync(
       conn,
       `
-        SELECT CASE WHEN PIN_HASH = CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)), 2)
-                    THEN 1 ELSE 0 END AS IsValid
+        SELECT PIN_HASH
         FROM dbo.PING WITH (UPDLOCK, HOLDLOCK)
         WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
       `,
-      [currentPin, mssv]
+      [mssv]
     );
 
-    if (Number(verifyRows[0]?.IsValid || 0) !== 1) {
+    if (
+      !verifyRows.length ||
+      !(await verifyStoredPin(currentPin, verifyRows[0].PIN_HASH))
+    ) {
       const error = new Error("PIN hiện tại không đúng hoặc vừa được thay đổi ở phiên khác");
       error.statusCode = 401;
       throw error;
@@ -1342,14 +2183,21 @@ async function applyStudentPinChangeTransaction({
       );
     }
 
+    await saveStableCryptoKeyEnvelope({
+      principalType: "SINHVIEN",
+      principalId: mssv,
+      envelope,
+      conn,
+    });
+
     await connectionQueryAsync(
       conn,
       `
         UPDATE dbo.PING
-        SET PIN_HASH = CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)), 2)
+        SET PIN_HASH = ?
         WHERE UPPER(LTRIM(RTRIM(MASV))) = UPPER(?)
       `,
-      [newPin, mssv]
+      [newPinHash, mssv]
     );
 
     await connectionQueryAsync(
@@ -2252,13 +3100,13 @@ app.get("/api/pin-change-jobs/:jobId", (req, res) => {
 });
 
 
-// New Flow
-// 1. Sinh viên thiết lập/cập nhật mã PIN
-// Lưu ý quan trọng:
-// - PIN sinh viên cũng là private key trong flow Diffie-Hellman + CRT.
-// - Nếu chỉ đổi PIN_HASH mà không mã hóa lại DIEM_CRT thì điểm cũ sẽ không giải mã được.
-// - Vì vậy API này giải mã điểm cũ bằng PIN cũ, mã hóa lại theo PIN mới, rồi mới cập nhật PIN/PUBLIC_KEY.
+// Stable-key flow:
+// - PIN chỉ dùng để mở khóa riêng CRT/DH ổn định.
+// - Đổi PIN chỉ bọc lại khóa riêng và cập nhật PIN_HASH.
+// - PUBLIC_KEY và DIEM_CRT.C không đổi, nên không quét lại lịch sử điểm.
+// - Flow mã hóa lại cũ chỉ còn là đường chuyển đổi một lần cho dữ liệu legacy lỗi.
 app.post("/api/set-pin", async (req, res) => {
+  let pinAttemptKey = null;
   try {
     const auth = getAuthUser(req);
     if (!auth.isLoggedIn) {
@@ -2275,8 +3123,10 @@ app.post("/api/set-pin", async (req, res) => {
     if (!username || !currentPin || !newPin) {
       return res.status(400).json({ message: "Vui lòng nhập đầy đủ PIN hiện tại và PIN mới" });
     }
-    if (!/^\d{4,100}$/.test(currentPin) || !/^\d{4,100}$/.test(newPin)) {
-      return res.status(400).json({ message: "PIN phải là số và có ít nhất 4 chữ số" });
+    if (!/^\d{4,100}$/.test(currentPin) || !/^\d{6,100}$/.test(newPin)) {
+      return res.status(400).json({
+        message: "PIN hiện tại không hợp lệ; PIN mới phải là số và có ít nhất 6 chữ số",
+      });
     }
     if (currentPin === newPin) {
       return res.status(400).json({ message: "PIN mới phải khác PIN hiện tại" });
@@ -2287,19 +3137,8 @@ app.post("/api/set-pin", async (req, res) => {
       if (!maGv) {
         return res.status(400).json({ message: "Session giảng viên thiếu MaGV" });
       }
-
-      const verifyRows = await queryAsync(
-        `
-          SELECT CASE WHEN PIN_HASH = CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', CONVERT(VARCHAR(100), ?)), 2)
-                      THEN 1 ELSE 0 END AS IsValid
-          FROM dbo.GIANG_VIEN
-          WHERE UPPER(LTRIM(RTRIM(MaGV))) = UPPER(?)
-        `,
-        [currentPin, maGv]
-      );
-      if (Number(verifyRows[0]?.IsValid || 0) !== 1) {
-        return res.status(401).json({ message: "PIN hiện tại không đúng" });
-      }
+      pinAttemptKey = buildPinAttemptKey(req, "CHANGE_PIN", maGv);
+      if (rejectIfPinRateLimited(res, pinAttemptKey)) return;
 
       const activeJob = getActiveTeacherPinChangeJob(maGv);
       if (activeJob) {
@@ -2316,17 +3155,34 @@ app.post("/api/set-pin", async (req, res) => {
         });
       }
 
-      const job = startTeacherPinChangeJob({
-        maGv,
-        username,
-        currentPin,
-        newPin,
-      });
+      try {
+        const result = await changePinByRewrappingStableKey({
+          principalType: "GIANGVIEN",
+          principalId: maGv,
+          username,
+          currentPin,
+          newPin,
+        });
+        clearPinFailures(pinAttemptKey);
+        return res.json(result);
+      } catch (error) {
+        if (!error.requiresLegacyReEncryption) throw error;
 
-      return res.status(202).json({
-        ...serializePinChangeJob(job),
-        message: "Đã nhận yêu cầu đổi PIN. Hệ thống đang mã hóa lại điểm CRT ở nền.",
-      });
+        const job = startTeacherPinChangeJob({
+          maGv,
+          username,
+          currentPin,
+          newPin,
+        });
+        clearPinFailures(pinAttemptKey);
+
+        return res.status(202).json({
+          ...serializePinChangeJob(job),
+          legacyMigration: true,
+          message:
+            "Hệ thống đang chuyển tài khoản sang khóa CRT ngẫu nhiên 256-bit. Đây là lần mã hóa lại duy nhất; các lần đổi PIN sau sẽ không quét điểm cũ.",
+        });
+      }
     }
 
     if (!auth.isStudent) {
@@ -2334,11 +3190,8 @@ app.post("/api/set-pin", async (req, res) => {
     }
 
     const mssv = String(auth.relatedId || req.session.user?.user || "").trim();
-    const verifyRows = await queryAsync(`EXEC sp_VerifyPIN @MASV = ?, @PIN = ?`, [mssv, currentPin]);
-    if (Number(verifyRows[0]?.IsValid || 0) !== 1) {
-      return res.status(401).json({ message: "PIN hiện tại không đúng" });
-    }
-
+    pinAttemptKey = buildPinAttemptKey(req, "CHANGE_PIN", mssv);
+    if (rejectIfPinRateLimited(res, pinAttemptKey)) return;
     const activeJob = getActiveStudentPinChangeJob(mssv);
     if (activeJob) {
       return res.status(202).json({
@@ -2354,20 +3207,38 @@ app.post("/api/set-pin", async (req, res) => {
       });
     }
 
-    const job = startStudentPinChangeJob({
-      mssv,
-      username,
-      currentPin,
-      newPin,
-    });
+    try {
+      const result = await changePinByRewrappingStableKey({
+        principalType: "SINHVIEN",
+        principalId: mssv,
+        username,
+        currentPin,
+        newPin,
+      });
+      clearPinFailures(pinAttemptKey);
+      return res.json(result);
+    } catch (error) {
+      if (!error.requiresLegacyReEncryption) throw error;
 
-    return res.status(202).json({
-      ...serializePinChangeJob(job),
-      message: "Đã nhận yêu cầu đổi PIN. Hệ thống đang mã hóa lại điểm CRT ở nền.",
-    });
+      const job = startStudentPinChangeJob({
+        mssv,
+        username,
+        currentPin,
+        newPin,
+      });
+      clearPinFailures(pinAttemptKey);
+
+      return res.status(202).json({
+        ...serializePinChangeJob(job),
+        legacyMigration: true,
+        message:
+          "Hệ thống đang chuyển tài khoản sang khóa CRT ngẫu nhiên 256-bit. Đây là lần mã hóa lại duy nhất; các lần đổi PIN sau sẽ không quét điểm cũ.",
+      });
+    }
   } catch (err) {
     console.error("Lỗi cập nhật PIN:", err);
     const statusCode = Number(err.statusCode) || 500;
+    if (statusCode === 401 && pinAttemptKey) recordPinFailure(pinAttemptKey);
     return res.status(statusCode).json({
       success: false,
       message: statusCode === 401 ? "PIN hiện tại không đúng" : "Không thể đổi PIN: " + err.message,
@@ -2381,7 +3252,7 @@ app.post("/api/set-pin", async (req, res) => {
 // Chỉ lưu C và ngữ cảnh CRT; START_INDEX/END_INDEX chỉ tồn tại trong bộ nhớ.
 // 2. Giảng viên nhập điểm theo flow Diffie-Hellman + CRT
 // Mã hóa:
-//   PUBLIC_KEY sinh viên + PIN giảng viên
+//   PUBLIC_KEY sinh viên + khóa riêng ổn định của giảng viên
 //   => sharedSecret
 //   => startIndex/endIndex
 //   => primes
@@ -2390,7 +3261,7 @@ app.post("/api/set-pin", async (req, res) => {
 // Lưu:
 //   DIEM_CRT(MASV, MAHP, MAGV, C)
 //
-// Không lưu START_INDEX/END_INDEX. Khi cần, hệ thống tính lại từ PIN và PUBLIC_KEY.
+// Không lưu START_INDEX/END_INDEX. Khi cần, hệ thống tính lại từ khóa ổn định và PUBLIC_KEY.
 app.post("/admin/nhap-diem", async (req, res) => {
   try {
     const auth = getAuthUser(req);
@@ -2458,6 +3329,8 @@ app.post("/admin/nhap-diem", async (req, res) => {
         message: "PIN giảng viên phải là số"
       });
     }
+    const pinAttemptKey = buildPinAttemptKey(req, "ENTER_GRADES", auth.relatedId);
+    if (rejectIfPinRateLimited(res, pinAttemptKey)) return;
 
     const rotatingStudent = grades
       .map((grade) => String(
@@ -2578,26 +3451,41 @@ app.post("/admin/nhap-diem", async (req, res) => {
       });
     }
 
-    const submittedPinHash = crypto
-      .createHash("sha256")
-      .update(pin, "utf8")
-      .digest("hex")
-      .toUpperCase();
-    const storedPinHash = String(gvRows[0].PIN_HASH || "").trim().toUpperCase();
-
-    if (!storedPinHash || submittedPinHash !== storedPinHash) {
+    if (!(await verifyStoredPin(pin, gvRows[0].PIN_HASH))) {
+      recordPinFailure(pinAttemptKey);
       return res.status(401).json({
         message: "PIN giảng viên không đúng. Không mã hóa dữ liệu bằng PIN sai."
       });
     }
+    clearPinFailures(pinAttemptKey);
 
-    const expectedTeacherPublicKey = await calculatePublicKeyFromPin(pin);
     const storedTeacherPublicKey = String(gvRows[0].PUBLIC_KEY || "").trim();
-
-    if (!storedTeacherPublicKey || storedTeacherPublicKey !== expectedTeacherPublicKey) {
-      return res.status(409).json({
+    let teacherStableKey;
+    try {
+      teacherStableKey = await getOrBootstrapStableCryptoPrivateKey({
+        principalType: "GIANGVIEN",
+        principalId: maGv,
+        pin,
+        storedPublicKey: storedTeacherPublicKey,
+      });
+    } catch (error) {
+      if (error.requiresLegacyReEncryption) {
+        return res.status(428).json({
+          message:
+            "Tài khoản giảng viên cần đổi PIN một lần để chuyển sang khóa CRT ngẫu nhiên trước khi nhập điểm.",
+          requiresPinMigration: true,
+        });
+      }
+      return res.status(Number(error.statusCode) || 409).json({
+        message: error.message,
+      });
+    }
+    const teacherPrivateKey = teacherStableKey.privateKey;
+    if (teacherStableKey.requiresStrongKeyMigration) {
+      return res.status(428).json({
         message:
-          "PUBLIC_KEY giảng viên chưa đồng bộ với PIN hiện tại. Hãy đổi PIN giảng viên một lần trên trang Encryption Key để hệ thống tự mã hóa lại dữ liệu cũ trước khi nhập điểm."
+          "Tài khoản giảng viên đang dùng khóa legacy dựa trên PIN. Vui lòng đổi PIN một lần để chuyển sang khóa CRT ngẫu nhiên trước khi nhập điểm.",
+        requiresPinMigration: true,
       });
     }
 
@@ -2749,7 +3637,7 @@ app.post("/admin/nhap-diem", async (req, res) => {
       //
       // Nên ở đây:
       //   publicKey = PUBLIC_KEY sinh viên
-      //   pin       = PIN giảng viên
+      //   pin       = khóa riêng ổn định của giảng viên
       // =======================================================
 
       const primeRangeRes = await fetch(
@@ -2766,8 +3654,8 @@ app.post("/admin/nhap-diem", async (req, res) => {
             maHp: courseIdClean,
             N: 5000000,
 
-            // PIN giảng viên
-            pin,
+            // Giữ tên field "pin" để tương thích API Java hiện tại.
+            pin: teacherPrivateKey,
 
             // PUBLIC_KEY sinh viên
             publicKey: svPublicKey,
@@ -3053,8 +3941,9 @@ app.post("/admin/nhap-diem", async (req, res) => {
     });
   }
 });
-// 3. Sinh viên xem điểm theo flow mới
-// Lấy C từ DIEM_CRT, dẫn xuất startIndex/endIndex trong bộ nhớ bằng PIN, lấy primes rồi giải mã CRT.
+// 3. Sinh viên xem điểm
+// PIN mở khóa riêng ổn định; khóa này dẫn xuất startIndex/endIndex trong bộ nhớ
+// để lấy primes và giải mã C từ DIEM_CRT.
 app.post("/api/view-grades", async (req, res) => {
   try {
     console.log("========== API /api/view-grades ==========");
@@ -3133,6 +4022,8 @@ app.post("/api/view-grades", async (req, res) => {
 
     const mssvClean = mssv.trim();
     const courseIdClean = courseId.trim();
+    const pinAttemptKey = buildPinAttemptKey(req, "VIEW_GRADES", mssvClean);
+    if (rejectIfPinRateLimited(res, pinAttemptKey)) return;
 
     const activeStudentPinJob = getActiveStudentPinChangeJob(mssvClean);
     if (activeStudentPinJob) {
@@ -3173,18 +4064,11 @@ app.post("/api/view-grades", async (req, res) => {
     }
 
     const pinCheckStudent = pinCheckRows[0];
-    const pinCheckInputHash = crypto
-      .createHash("sha256")
-      .update(pin, "utf8")
-      .digest("hex")
-      .toUpperCase();
-    const pinCheckStoredHash = String(pinCheckStudent.PIN_HASH || "")
-      .trim()
-      .toUpperCase();
-
-    if (!pinCheckStoredHash || pinCheckStoredHash !== pinCheckInputHash) {
+    if (!(await verifyStoredPin(pin, pinCheckStudent.PIN_HASH))) {
+      recordPinFailure(pinAttemptKey);
       return res.status(400).json({ message: "Nhập PIN sai" });
     }
+    clearPinFailures(pinAttemptKey);
 
     // =========================================================
     // 2. Lấy C và MAGV từ DIEM_CRT
@@ -3279,22 +4163,34 @@ app.post("/api/view-grades", async (req, res) => {
 
     const sv = svRows[0];
 
-    const inputPinHash = crypto
-      .createHash("sha256")
-      .update(pin, "utf8")
-      .digest("hex")
-      .toUpperCase();
-    const storedPinHash = String(sv.PIN_HASH || "").trim().toUpperCase();
-
-    if (!storedPinHash || storedPinHash !== inputPinHash) {
-      return res.status(400).json({ message: "Nhập PIN sai" });
-    }
-
-    // Kiểm tra thêm PUBLIC_KEY để phát hiện dữ liệu khóa không đồng bộ.
-    const calculatedStudentPublicKey = await calculatePublicKeyFromPin(pin);
     const storedStudentPublicKey = String(sv.PUBLIC_KEY || "").trim();
-    if (!storedStudentPublicKey || calculatedStudentPublicKey !== storedStudentPublicKey) {
-      return res.status(400).json({ message: "Nhập PIN sai" });
+    let studentStableKey;
+    try {
+      studentStableKey = await getOrBootstrapStableCryptoPrivateKey({
+        principalType: "SINHVIEN",
+        principalId: mssvClean,
+        pin,
+        storedPublicKey: storedStudentPublicKey,
+      });
+    } catch (error) {
+      if (error.requiresLegacyReEncryption) {
+        return res.status(428).json({
+          message:
+            "Tài khoản sinh viên cần đổi PIN một lần để chuyển sang khóa CRT ngẫu nhiên trước khi xem điểm.",
+          requiresPinMigration: true,
+        });
+      }
+      return res.status(Number(error.statusCode) || 400).json({
+        message: error.message,
+      });
+    }
+    const studentPrivateKey = studentStableKey.privateKey;
+    if (studentStableKey.requiresStrongKeyMigration) {
+      return res.status(428).json({
+        message:
+          "Tài khoản sinh viên đang dùng khóa legacy dựa trên PIN. Vui lòng đổi PIN một lần để chuyển sang khóa CRT ngẫu nhiên trước khi xem điểm.",
+        requiresPinMigration: true,
+      });
     }
 
     if (!sv.MaKhoa || !sv.MaLop) {
@@ -3309,10 +4205,10 @@ app.post("/api/view-grades", async (req, res) => {
     //
     // Quan trọng:
     // Mã hóa dùng:
-    //   PUBLIC_KEY sinh viên + PIN giảng viên
+    //   PUBLIC_KEY sinh viên + khóa riêng ổn định của giảng viên
     //
     // Giải mã phải dùng:
-    //   PUBLIC_KEY giảng viên + PIN sinh viên
+    //   PUBLIC_KEY giảng viên + khóa riêng ổn định của sinh viên
     //
     // Nếu tên bảng giảng viên của bạn khác GIANG_VIEN,
     // hãy đổi lại đúng tên bảng/cột trong query bên dưới.
@@ -3364,7 +4260,7 @@ app.post("/api/view-grades", async (req, res) => {
     //
     // Vì vậy:
     //   publicKey = PUBLIC_KEY giảng viên
-    //   pin       = PIN sinh viên
+    //   pin       = khóa riêng ổn định của sinh viên
     // =========================================================
 
     const primeRangeRes = await fetch(
@@ -3381,8 +4277,8 @@ app.post("/api/view-grades", async (req, res) => {
           maHp: courseIdClean,
           N: 5000000,
 
-          // PIN sinh viên
-          pin,
+          // Giữ tên field "pin" để tương thích API Java hiện tại.
+          pin: studentPrivateKey,
 
           // PUBLIC_KEY giảng viên
           publicKey: gvPublicKey,
@@ -3658,6 +4554,28 @@ app.post("/admin/student", (req, res) => {
           status: "ERROR",
         });
         return res.status(500).json({ message: err.message });
+      }
+
+      try {
+        await provisionStrongCryptoIdentity({
+          principalType: "SINHVIEN",
+          principalId: mssv,
+          initialPin: "123456",
+        });
+      } catch (keyError) {
+        console.error("Lỗi khởi tạo khóa CRT mạnh cho sinh viên:", keyError);
+        await recordAdminAuditLog(req, {
+          actionCode: "STUDENT_KEY_PROVISION_ERROR",
+          actionLabel: "Khởi tạo khóa sinh viên",
+          entityType: "SINH_VIEN",
+          entityId: mssv,
+          message: `Đã tạo sinh viên nhưng khởi tạo khóa CRT thất bại: ${keyError.message}`,
+          status: "ERROR",
+        });
+        return res.status(500).json({
+          message:
+            "Đã tạo hồ sơ sinh viên nhưng chưa khởi tạo được khóa CRT. Vui lòng kiểm tra Crypto Service trước khi sử dụng tài khoản.",
+        });
       }
 
       await recordAdminAuditLog(req, {
